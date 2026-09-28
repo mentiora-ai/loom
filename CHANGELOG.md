@@ -6,6 +6,20 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.4] — 2026-09-28 — Dependency & Security Refresh, date inputs, a fresh mic per call
+
+A patch release. It clears three security advisories and folds in the pending
+dependency bumps, makes `web.type` fill native date/time inputs (#332), and gives
+every `getUserMedia` its own synthetic microphone track (#335). **RUSTSEC-2026-0268**
+(guest-controlled host heap allocation through WASIp3 streams) and **RUSTSEC-2026-0269** (filesystem sandbox
+escape when paths or symlinks contain trailing slashes) are fixed by moving wasmtime +
+wasmtime-wasi from 47.0.3 to **48.0.3** — a major-version engine bump that required no
+code changes and keeps the replay hash chain byte-equal (the full determinism suite
+passes unchanged). **RUSTSEC-2026-0285** (TLS 1.3 handshake messages accepted across
+encryption-level boundaries) is fixed by moving rustls from 0.23.43 to 0.23.45. The
+workspace also moves to wit-bindgen 0.61, jsonschema 0.52, and wasmparser 0.256, plus
+the non-major cargo group and an updated CI action. (#306)
+
 ### Fixed
 
 - **`web.type` fills native date/time inputs** — Chromium ignores `Input.insertText` on
@@ -22,29 +36,13 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`web.type` through a locator replaces instead of prepending** — fill's select-all step
   re-queried the raw selector with `document.querySelector`, which throws on `role=`, `text=`,
   `css=` and `frame=` locators, so the field was never cleared and the text landed in front of
-  the existing value (`"old"` → `"newold"`). Fill now acts on the element the locator resolved to.
-
-### Changed
-
-- **`web.type` fill refuses a disabled or readonly target** with `kind: "not_editable"`
-  (Playwright parity). A fill into a disabled text field used to succeed silently without
-  changing it. `mode: "value"` still writes without checks when that is deliberately wanted.
-
-## [0.15.4] — 2026-09-28 — Dependency & Security Refresh
-
-A patch release with no feature changes: it clears three security advisories and
-folds in the pending dependency bumps. **RUSTSEC-2026-0268** (guest-controlled host
-heap allocation through WASIp3 streams) and **RUSTSEC-2026-0269** (filesystem sandbox
-escape when paths or symlinks contain trailing slashes) are fixed by moving wasmtime +
-wasmtime-wasi from 47.0.3 to **48.0.3** — a major-version engine bump that required no
-code changes and keeps the replay hash chain byte-equal (the full determinism suite
-passes unchanged). **RUSTSEC-2026-0285** (TLS 1.3 handshake messages accepted across
-encryption-level boundaries) is fixed by moving rustls from 0.23.43 to 0.23.45. The
-workspace also moves to wit-bindgen 0.61, jsonschema 0.52, and wasmparser 0.256, plus
-the non-major cargo group and an updated CI action. (#306)
-
-### Fixed
-
+  the existing value (`"old"` → `"newold"`). Fill now acts on the element the locator resolved to. (#332)
+- **Every `getUserMedia` gets its own synthetic microphone track** — the injected-audio shim
+  handed every caller the SAME track, so a page that stopped one call's microphone (the normal way
+  to end a WebRTC call) silenced the synthetic mic for the rest of the document, and a second call
+  in the same page published an ended track and was never heard. Each `getUserMedia` now returns a
+  clone of the injected track; stopping it ends only that clone, and the next call gets a live one.
+  (#318, #335)
 - **cargo-deny advisories** — RUSTSEC-2026-0268 / RUSTSEC-2026-0269 (Wasmtime) cleared
   via wasmtime + wasmtime-wasi 47.0.3 → 48.0.3; RUSTSEC-2026-0285 (rustls) cleared via
   rustls 0.23.43 → 0.23.45. The yanked chacha20 0.10.1 is replaced by 0.10.2. (#306)
@@ -56,6 +54,10 @@ the non-major cargo group and an updated CI action. (#306)
   uuid 1.26.1, flate2 1.1.10, rustix 1.1.5, secret-service 5.2.0). No public API
   changes. (#306)
 - **CI actions** — taiki-e/install-action v2.86.5. (#306)
+- **`web.type` fill refuses a disabled or readonly target** with `kind: "not_editable"`
+  (Playwright parity). A fill into a disabled text field used to succeed silently without
+  changing it. `mode: "value"` still writes without checks when that is deliberately wanted.
+  (#332)
 - **Vendored WASM guest** — `loom-cli/vendor/loom_surface_web.wasm` rebuilt against the
   new dependency set (Linux CI bytes). (#306)
 
