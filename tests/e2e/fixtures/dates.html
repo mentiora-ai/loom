@@ -23,6 +23,8 @@
 <!-- An SPA that replaces the field when it gains focus: fill must report an
      error, never a success into a node that is no longer in the document. -->
 <label for="swapper">Swap me</label><input id="swapper" type="text">
+<!-- A pre-filled field inside a frame: fill through frame= must replace it too. -->
+<iframe id="inner-frame" srcdoc="<input id='fname' value='old'>"></iframe>
 <!-- Shortest accessible name wins among role=textbox candidates: once a date
      input is a textbox, "Date" (date input) outranks "Date of birth" (text). -->
 <label for="dob">Date of birth</label><input id="dob" type="text">

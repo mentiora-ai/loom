@@ -12,7 +12,7 @@
 // Pure + side-effect-free → unit-tested directly (see `#[cfg(test)]`).
 
 use super::helpers::{cbor_get, parse_evaluate_payload};
-use super::types::SetValueType;
+use super::types::{FillFailure, SetValueType};
 use ciborium::value::{Integer, Value};
 use loom_shared::shim_protocol::CdpMessage;
 
@@ -186,61 +186,47 @@ pub(crate) enum FillPrep {
     Insert,
 }
 
-/// Why the prepare step produced no [`FillPrep`]. Each carries a FIXED message:
-/// page-authored text (an exception message, an odd verdict) never reaches a
-/// receipt — the studio hands receipt errors to an LLM agent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FillPrepFailure {
-    Detached,
-    NoObjectId,
-    PageException,
-    UnrecognisedVerdict,
-    Unacknowledged,
-}
-
-impl FillPrepFailure {
-    pub(crate) fn message(self) -> &'static str {
-        match self {
-            Self::Detached => "web.type fill: the element was detached from the document before it could be filled",
-            Self::NoObjectId => "web.type fill: DOM.resolveNode returned no object for the element",
-            Self::PageException => "web.type fill: the page threw while the field was being prepared",
-            Self::UnrecognisedVerdict => "web.type fill: unrecognised result from the field-prepare step",
-            Self::Unacknowledged => "web.type fill: prepare step unacknowledged — field state unknown",
-        }
-    }
-}
-
 /// The function `web.type` fill runs ON the resolved node (`this`) via
 /// `Runtime.callFunctionOn`, with the typed text as its CDP argument (never
 /// spliced into the source). Order matters: a node an SPA replaced after focus is
 /// refused before anything is written; a disabled/readonly field is refused
 /// (`:disabled` also covers a disabled `<fieldset>`); a set-value input is written
 /// through the NATIVE `HTMLInputElement.prototype` setter — React's per-instance
-/// value tracker would swallow a plain `el.value =` — and verified by read-back
-/// before `input`/`change` fire; anything else just has its content selected.
-/// Selection stays best-effort (a DOMException there is swallowed, as before).
+/// value tracker would swallow a plain `el.value =` — and verified by a native
+/// read-back before `input`/`change` fire; anything else is re-focused and has its
+/// content selected, so the `Input.insertText` that follows lands in it and
+/// replaces the content. Every decision reads the platform's own prototype
+/// accessors, not the element's instance properties, which a page (or a framework)
+/// can redefine. Focus/selection stay best-effort (a DOMException is swallowed).
 pub(crate) fn fill_prepare_fn() -> &'static str {
     static FN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     FN.get_or_init(|| {
         let set_value_types: Vec<&str> = SetValueType::ALL.iter().map(|t| t.as_str()).collect();
-        let set_value_types = serde_json::to_string(&set_value_types).unwrap_or_else(|_| "[]".into());
+        let set_value_types =
+            serde_json::to_string(&set_value_types).unwrap_or_else(|_| "[]".into());
         format!(
             "function(text){{\
                var el=this;\
-               if(!el.isConnected)return {{v:'detached'}};\
-               var tag=el.tagName;\
-               if((tag==='INPUT'||tag==='TEXTAREA')&&(el.matches(':disabled')||el.readOnly))return {{v:'not_editable'}};\
-               if(tag==='INPUT'&&{set_value_types}.indexOf(el.type)!==-1){{\
-                 var want=String(text).trim();\
-                 Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,want);\
-                 if(el.value!==want)return {{v:'malformed',type:el.type}};\
-                 el.dispatchEvent(new Event('input',{{bubbles:true,composed:true}}));\
-                 el.dispatchEvent(new Event('change',{{bubbles:true}}));\
-                 return {{v:'set'}};\
+               function get(proto,name){{var d=Object.getOwnPropertyDescriptor(proto,name);return d&&d.get?d.get.call(el):undefined;}}\
+               if(!get(Node.prototype,'isConnected'))return {{v:'detached'}};\
+               var tag=get(Element.prototype,'tagName');\
+               var proto=tag==='INPUT'?HTMLInputElement.prototype:tag==='TEXTAREA'?HTMLTextAreaElement.prototype:null;\
+               if(proto&&(Element.prototype.matches.call(el,':disabled')||get(proto,'readOnly')))return {{v:'not_editable'}};\
+               if(tag==='INPUT'){{\
+                 var type=get(proto,'type');\
+                 if({set_value_types}.indexOf(type)!==-1){{\
+                   var want=String(text).trim();\
+                   var value=Object.getOwnPropertyDescriptor(proto,'value');\
+                   value.set.call(el,want);\
+                   if(value.get.call(el)!==want)return {{v:'malformed',type:type}};\
+                   EventTarget.prototype.dispatchEvent.call(el,new Event('input',{{bubbles:true,composed:true}}));\
+                   EventTarget.prototype.dispatchEvent.call(el,new Event('change',{{bubbles:true}}));\
+                   return {{v:'set'}};\
+                 }}\
                }}\
                try{{\
-                 if(typeof el.select==='function'){{el.select();}}\
-                 else if(typeof el.setSelectionRange==='function'){{el.setSelectionRange(0,(el.value||'').length);}}\
+                 HTMLElement.prototype.focus.call(el);\
+                 if(proto)proto.select.call(el);\
                }}catch(_e){{}}\
                return {{v:'insert'}};\
              }}"
@@ -306,17 +292,17 @@ pub(crate) fn release_fill_objects_message(object_group: &str) -> CdpMessage {
 
 /// Parse the `callFunctionOn` response of [`fill_prepare_message`] into a
 /// [`FillPrep`]. The verdict is page-produced, so only the known shapes are
-/// accepted, and the input type is narrowed to the closed [`SetValueType`].
-pub(crate) fn parse_fill_prepare(payload: &Value) -> Result<FillPrep, FillPrepFailure> {
-    let outcome =
-        parse_evaluate_payload(payload).map_err(|_| FillPrepFailure::UnrecognisedVerdict)?;
+/// accepted, and the input type is narrowed to the closed [`SetValueType`];
+/// anything else is a [`FillFailure`] with a fixed message.
+pub(crate) fn parse_fill_prepare(payload: &Value) -> Result<FillPrep, FillFailure> {
+    let outcome = parse_evaluate_payload(payload).map_err(|_| FillFailure::UnrecognisedVerdict)?;
     if outcome.exception.is_some() {
-        return Err(FillPrepFailure::PageException);
+        return Err(FillFailure::PageException);
     }
     let verdict = outcome
         .result
         .as_ref()
-        .ok_or(FillPrepFailure::UnrecognisedVerdict)?;
+        .ok_or(FillFailure::UnrecognisedVerdict)?;
     let field = |key: &str| match cbor_get(verdict, key) {
         Some(Value::Text(s)) => Some(s.as_str()),
         _ => None,
@@ -325,12 +311,12 @@ pub(crate) fn parse_fill_prepare(payload: &Value) -> Result<FillPrep, FillPrepFa
         Some("set") => Ok(FillPrep::ValueSet),
         Some("insert") => Ok(FillPrep::Insert),
         Some("not_editable") => Ok(FillPrep::NotEditable),
-        Some("detached") => Err(FillPrepFailure::Detached),
+        Some("detached") => Err(FillFailure::Detached),
         Some("malformed") => field("type")
             .and_then(SetValueType::parse)
             .map(FillPrep::Malformed)
-            .ok_or(FillPrepFailure::UnrecognisedVerdict),
-        _ => Err(FillPrepFailure::UnrecognisedVerdict),
+            .ok_or(FillFailure::UnrecognisedVerdict),
+        _ => Err(FillFailure::UnrecognisedVerdict),
     }
 }
 
@@ -760,7 +746,7 @@ mod tests {
         );
         assert_eq!(
             parse_fill_prepare(&verdict(&[("v", "detached")])),
-            Err(FillPrepFailure::Detached)
+            Err(FillFailure::Detached)
         );
     }
 
@@ -771,13 +757,13 @@ mod tests {
         for ty in ["text", "Date", "date; injected", ""] {
             assert_eq!(
                 parse_fill_prepare(&verdict(&[("v", "malformed"), ("type", ty)])),
-                Err(FillPrepFailure::UnrecognisedVerdict),
+                Err(FillFailure::UnrecognisedVerdict),
                 "type {ty:?}"
             );
         }
         assert_eq!(
             parse_fill_prepare(&verdict(&[("v", "malformed")])),
-            Err(FillPrepFailure::UnrecognisedVerdict)
+            Err(FillFailure::UnrecognisedVerdict)
         );
     }
 
@@ -785,21 +771,21 @@ mod tests {
     fn parse_fill_prepare_refuses_anything_else() {
         assert_eq!(
             parse_fill_prepare(&verdict(&[("v", "SET")])),
-            Err(FillPrepFailure::UnrecognisedVerdict)
+            Err(FillFailure::UnrecognisedVerdict)
         );
         assert_eq!(
             parse_fill_prepare(&call_result(Value::Text("set".into()))),
-            Err(FillPrepFailure::UnrecognisedVerdict),
+            Err(FillFailure::UnrecognisedVerdict),
             "a bare string is not the verdict shape"
         );
         assert_eq!(
             parse_fill_prepare(&Value::Map(vec![])),
-            Err(FillPrepFailure::UnrecognisedVerdict),
+            Err(FillFailure::UnrecognisedVerdict),
             "neither result nor exceptionDetails"
         );
         assert_eq!(
             parse_fill_prepare(&Value::Null),
-            Err(FillPrepFailure::UnrecognisedVerdict)
+            Err(FillFailure::UnrecognisedVerdict)
         );
     }
 
@@ -819,7 +805,7 @@ mod tests {
             ]),
         )]);
         let failure = parse_fill_prepare(&thrown).unwrap_err();
-        assert_eq!(failure, FillPrepFailure::PageException);
+        assert_eq!(failure, FillFailure::PageException);
         assert!(
             !failure.message().contains("API key"),
             "page text never reaches the message"

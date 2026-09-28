@@ -705,7 +705,7 @@ fn cdp_log_since(log_path: &std::path::Path, from: usize) -> (String, usize) {
 #[tokio::test]
 #[ignore = "requires fake-chromium binary; run `cargo build -p loom-shims --features fake-chromium-bin --bin fake-chromium` first"]
 async fn fill_prepare_routes_on_the_resolved_node() {
-    use loom_host::shim_manager::{InputDispatchOutcome as O, SetValueType};
+    use loom_host::shim_manager::{FillFailure, InputDispatchOutcome as O, SetValueType};
     let sels = [
         "#text",
         "#when",
@@ -777,29 +777,42 @@ async fn fill_prepare_routes_on_the_resolved_node() {
     at = next;
     assert!(!sent.contains("Input.insertText"), "CDP log:\n{sent}");
 
-    // Every prepare failure is an Err with a fixed message, and never types.
-    for (sel, says) in [
-        ("#gone", "detached"),
-        ("#throws", "page threw"),
-        ("#odd", "unrecognised result"),
-        ("#oddtype", "unrecognised result"),
-        ("#noobj", "no object"),
-        ("#unresolvable", "DOM.resolveNode"),
+    // A page-side reason the element cannot be filled is a TYPED outcome with a
+    // fixed message (no page text), and never types.
+    for (sel, failure) in [
+        ("#gone", FillFailure::Detached),
+        ("#throws", FillFailure::PageException),
+        ("#odd", FillFailure::UnrecognisedVerdict),
+        ("#oddtype", FillFailure::UnrecognisedVerdict),
+        ("#noobj", FillFailure::NoObject),
+        ("#unresolvable", FillFailure::Rejected),
     ] {
-        let err = fill(sel)
-            .await
-            .expect_err(&format!("{sel} must be an error, not a success"));
-        let message = err.to_string();
-        assert!(message.contains(says), "{sel}: {message}");
+        let outcome = fill(sel).await.expect("fill transport error");
+        assert_eq!(outcome, O::FillFailed(failure), "{sel}");
         assert!(
-            !message.contains("fake page exception"),
-            "{sel}: page text leaked into the error: {message}"
+            !failure.message().contains("fake page exception"),
+            "{sel}: page text leaked into the message"
         );
     }
     let (sent, _) = cdp_log_since(&log_path, at);
     assert!(
         !sent.contains("Input.insertText"),
         "a failed prepare must never fall through to insertText; CDP log:\n{sent}"
+    );
+
+    // Page-side failures are the page's doing, not the shim's: a run of them must
+    // not trip the circuit breaker (threshold 20 here) and lock the session out.
+    for _ in 0..25 {
+        assert_eq!(
+            fill("#gone").await.expect("fill transport error"),
+            O::FillFailed(FillFailure::Detached)
+        );
+    }
+    assert_eq!(
+        fill("#text")
+            .await
+            .expect("the breaker must stay closed after page-side failures"),
+        O::Ok
     );
 
     // Every fill releases only its OWN object group: no two fills share one.

@@ -1284,7 +1284,7 @@ mod tests {
     #[test]
     fn fill_refusals_are_typed_errors_without_the_typed_text() {
         use crate::wire_receipts::build_input_dispatch_receipt;
-        use loom_host::shim_manager::{InputDispatchOutcome, SetValueType};
+        use loom_host::shim_manager::{FillFailure, InputDispatchOutcome, SetValueType};
         use loom_rpc::host_service_adapter::host_service_adapter::ReceiptStatus;
         let action = Action::WebType {
             session_id: s("sess"),
@@ -1303,6 +1303,11 @@ mod tests {
                 InputDispatchOutcome::NotEditable,
                 "not_editable",
                 "disabled or readonly",
+            ),
+            (
+                InputDispatchOutcome::FillFailed(FillFailure::Detached),
+                "type_failed",
+                "detached",
             ),
         ];
         for (outcome, kind, says) in cases {

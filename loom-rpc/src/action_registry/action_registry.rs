@@ -927,13 +927,18 @@ field's content exactly like a bare CSS selector.\n\n\
 Chromium ignores `Input.insertText` on date/time-family inputs, so fill sets \
 `<input type=date|time|datetime-local|month|week|color|range>` BY VALUE, the \
 way their native pickers do: the (trimmed) text goes through the native \
-`HTMLInputElement` value setter, is read back, and `input` then `change` fire. \
+`HTMLInputElement` value setter, is read back, and `input` then `change` fire \
+(synthetic, `isTrusted:false` — Chromium has no trusted edit path for these \
+controls). \
 The text must be in the input's own value format (`yyyy-mm-dd` for `date`, \
 `hh:mm` for `time`, `yyyy-mm-ddThh:mm` for `datetime-local`, `yyyy-mm`, \
 `yyyy-Www`, lower-case `#rrggbb`, a number the range allows); a value the \
 input rejects or normalises → `kind: \"malformed_value\"` (the browser leaves \
-the field empty). In `fill`, a disabled or readonly target → \
-`kind: \"not_editable\"`, and nothing is written.\n\n\
+the field empty). `text: \"\"` clears a date/time/month/week input; `color` and \
+`range` cannot be empty, so it is `malformed_value` there. In `fill`, a disabled \
+(including by a disabled `<fieldset>`) or readonly target → \
+`kind: \"not_editable\"`, and nothing is written. An element the page removes or \
+replaces before it can be filled → `kind: \"type_failed\"`.\n\n\
 `mode: \"value\"` is the legacy path: set `.value` via `Runtime.evaluate` + \
 synthetic `input`/`change` events (`isTrusted:false`). It updates the DOM \
 value but trust-gating frameworks treat it as not user-entered — kept as a \
@@ -985,7 +990,7 @@ SPA never surfaces a transport `rpc timeout`. Control it with `until` \
             },
             DEADLINE_MS_PARAM,
         ],
-        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. In `fill`: a value a date/time-family input rejects → `kind: \"malformed_value\"`; a disabled/readonly target → `kind: \"not_editable\"`; an element detached before it could be filled, or an unacknowledged prepare step → `kind: \"type_failed\"`. The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
+        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. In `fill`: a value a date/time-family input rejects → `kind: \"malformed_value\"`; a disabled/readonly target → `kind: \"not_editable\"`; an element the page removed or replaced before it could be filled, or an unacknowledged prepare step → `kind: \"type_failed\"` (fixed message; no page text). The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
         example: &["loom", "action", "web.type", "--session", "<SESSION>", "--selector", "#email", "--text", "user@example.com"],
     },
     ActionMeta {

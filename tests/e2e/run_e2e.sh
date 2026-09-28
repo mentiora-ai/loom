@@ -367,7 +367,7 @@ if [[ "$DSESSION" =~ ^[a-z0-9]{26}$ ]]; then
     fi
   done
 
-  # Fill REPLACES a pre-filled field through role=, css= and text= (was "newold").
+  # Fill REPLACES a pre-filled field through role=, css=, text= and frame= (was "newold").
   type_ "$DSESSION" 'role=textbox[name="Name"]' 'new' >"$RESULTS/type-replace-role.json"
   NV=$(idval "$DSESSION" name)
   if [ "$NV" = "new" ]; then
@@ -388,6 +388,13 @@ if [[ "$DSESSION" =~ ^[a-z0-9]{26}$ ]]; then
     ok "type-text-locator-replaces-prefilled-value"
   else
     fail "type-text-locator-replaces-prefilled-value" "value='$MV' (see $RESULTS/type-replace-text.json)"
+  fi
+  type_ "$DSESSION" 'frame=#inner-frame >> css=#fname' 'new' >"$RESULTS/type-replace-frame.json"
+  FV=$(dval "$DSESSION" 'document.getElementById("inner-frame").contentDocument.getElementById("fname").value')
+  if [ "$FV" = "new" ]; then
+    ok "type-frame-locator-replaces-prefilled-value"
+  else
+    fail "type-frame-locator-replaces-prefilled-value" "value='$FV' (see $RESULTS/type-replace-frame.json)"
   fi
   # An empty text clears a text field too (select, then insert "").
   type_ "$DSESSION" 'role=textbox[name="Name"]' '' >"$RESULTS/type-clear-role.json"

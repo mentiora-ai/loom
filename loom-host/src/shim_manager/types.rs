@@ -158,6 +158,9 @@ pub enum SetInputFilesOutcome {
 /// - `MalformedValue` — `web.type` fill set a date/time-family input by value
 ///   and the input rejected or normalised it (the read-back differs).
 /// - `NotEditable` — `web.type` fill targeted a disabled or readonly field.
+/// - `FillFailed` — `web.type` fill could not fill the element for a reason on
+///   the PAGE's side (see [`FillFailure`]). Typed, so it never counts against the
+///   shim's circuit breaker the way a transport failure does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputDispatchOutcome {
     Ok,
@@ -167,6 +170,41 @@ pub enum InputDispatchOutcome {
     DispatchedAckPending,
     MalformedValue(SetValueType),
     NotEditable,
+    FillFailed(FillFailure),
+}
+
+/// Why `web.type` fill could not fill the element it resolved. Each maps to a
+/// FIXED message: page-authored text (an exception message, an odd verdict, a
+/// CDP error about the page's node) never reaches a receipt — the agentic test
+/// studio hands receipt errors to an LLM agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillFailure {
+    /// The page replaced or removed the element after it was focused.
+    Detached,
+    /// `DOM.resolveNode` handed back no object for the element.
+    NoObject,
+    /// Chromium refused to resolve or run on the element (e.g. it is gone).
+    Rejected,
+    /// The page threw while the field was being prepared.
+    PageException,
+    /// The prepare step answered with something other than a known verdict.
+    UnrecognisedVerdict,
+}
+
+impl FillFailure {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::Detached => {
+                "web.type fill: the element was detached from the document before it could be filled"
+            }
+            Self::NoObject => "web.type fill: DOM.resolveNode returned no object for the element",
+            Self::Rejected => "web.type fill: the browser could not reach the element to fill it",
+            Self::PageException => "web.type fill: the page threw while the field was being prepared",
+            Self::UnrecognisedVerdict => {
+                "web.type fill: unrecognised result from the field-prepare step"
+            }
+        }
+    }
 }
 
 /// An `<input>` type that `web.type` fill sets by VALUE (native setter +

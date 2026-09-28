@@ -673,6 +673,12 @@ pub(crate) fn build_input_dispatch_receipt(
             "not_editable",
             "element is disabled or readonly".to_string(),
         ),
+        O::FillFailed(failure) => recording_error_receipt(
+            action_id,
+            session_id,
+            "type_failed",
+            failure.message().to_string(),
+        ),
     };
     // Stamp the action_hash so the host-side input verbs carry the same receipt
     // contract as the guest-dispatched interaction verbs (every interaction
