@@ -534,7 +534,7 @@ fn test_all_documented_error_codes_are_matchable() {
 #[test]
 fn test_replay_100x_zero_divergence() {
     // Note: this exercises the diff() API path (not byte equality as in
-    // replay_engine_behavior.rs::test_replay_100x_produces_identical_receipt_bytes).
+    // replay_engine_behavior/replay.rs::test_replay_100x_produces_identical_receipt_bytes).
     let tmp = TempDir::new().unwrap();
     let obs = make_obs(&tmp);
     let mw = make_manifest_writer(&tmp, obs.clone());

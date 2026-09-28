@@ -6,6 +6,38 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`web.select`, `web.hover`, `web.scroll` and `web.type mode:"value"` take the locator
+  grammar** — these verbs resolve their target inside the page, and ran the selector through
+  `document.querySelector`, so a `role=`, `text=`, `css=` or `frame=` locator threw and the verb
+  failed. They now resolve the same grammar as `web.click`, page-side (so `frame=` reaches
+  same-origin frames only). A plain CSS selector builds exactly the payload it did before, so
+  those recordings keep their `action_hash`; a locator-grammar selector, which used to fail, now
+  hashes the resolver it runs. (#324)
+
+### Changed
+
+- **`web.type` receipts: `action_hash` keys on the dispatch path** — a bare `web.type` (mode absent) is a
+  `fill`, and its receipt `action_hash` now hashes `fill`, the same as an explicit `mode: "fill"`; it was
+  labelled `value`, a path it never took. `action_hash` of NEW recordings of a bare `web.type` therefore
+  differs from older recordings of the same script (a `loom session diff` across versions shows it);
+  replay of existing recordings is unaffected (structural). (#322)
+- **Registry docs match the verbs** — `web.click` / `web.type` (fill, keystrokes) no longer claim a
+  `dom_after_hash` they do not emit, and `web.press_key` documents the full locator grammar it
+  accepts (`docs/actions.md`, `loom action --help`). (#323)
+- Internal refactors with no behavior change: split the oversized files — `wasm_bridge.rs` (#316),
+  `wire_receipts.rs` (#320), the daemon's `lib.rs` tests (#310), `host_impl.rs` (#315),
+  `receipt_marshaller.rs` (#317), the shim manager's `senders.rs` with one CDP-error helper
+  (#312, #319, #321), `action_executor.rs` (#314), the `fake-chromium` test binary (#313), the
+  action registry (#327), `replay_engine_behavior.rs` (#311) and `integration_shim_e2e.rs` (#326)
+  test files, the Python SDK's `loom/__init__.py` (#329), the TypeScript SDK's `session.ts` (#331)
+  and `tests/e2e/run_e2e.sh` (#330). Both SDKs export exactly the names they did.
+- **e2e harness: the fixture server is polled, not slept on** — the macOS pinned-Chromium e2e
+  job had failed at `fixture-server-up` on every run since at least 2026-08-20 (one `sleep 1`,
+  then one curl). `run_e2e.sh`, `run_load.sh` and `run_mcp.sh` share one bounded start that logs
+  why a start failed. (Internal; no runtime effect.)
+
 ## [0.15.4] — 2026-09-28 — Dependency & Security Refresh, date inputs, a fresh mic per call
 
 A patch release. It clears three security advisories and folds in the pending

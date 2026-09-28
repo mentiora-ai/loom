@@ -9,6 +9,8 @@ from __future__ import annotations
 import pytest
 
 import loom
+import loom._async_session
+import loom._session
 from loom._async_transport import AsyncLoomTransport
 from loom._errors import LoomRPCError
 from loom._transport import LoomTransport
@@ -26,7 +28,8 @@ def test_session_create_failure_closes_transport(daemon, monkeypatch):
             super().__init__(*args, **kwargs)
             created.append(self)
 
-    monkeypatch.setattr(loom, "LoomTransport", RecordingTransport)
+    # Patch where Session.create looks the transport up.
+    monkeypatch.setattr(loom._session, "LoomTransport", RecordingTransport)
     daemon.register_handler("session.create", _fail)
     with pytest.raises(LoomRPCError):
         loom.Session.create(socket_path=str(daemon.socket_path), token=daemon.token)
@@ -51,7 +54,7 @@ async def test_async_session_create_failure_closes_transport(daemon, monkeypatch
             super().__init__(*args, **kwargs)
             created.append(self)
 
-    monkeypatch.setattr(loom, "AsyncLoomTransport", RecordingTransport)
+    monkeypatch.setattr(loom._async_session, "AsyncLoomTransport", RecordingTransport)
     daemon.register_handler("session.create", _fail)
     with pytest.raises(LoomRPCError):
         await loom.AsyncSession.create(socket_path=str(daemon.socket_path), token=daemon.token)

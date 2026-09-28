@@ -14,15 +14,15 @@
  *   await session.navigate("https://example.com");
  */
 
+export { Session } from "./session.js";
 export {
-  Session,
   sessionList,
   vaultGrant,
   vaultRevoke,
   vaultListGrants,
   killSession,
   daemonHealth,
-} from "./session.js";
+} from "./admin.js";
 export { LoomTransport } from "./transport.js";
 export { LOOM_ERROR_CODES } from "./types.js";
 export {

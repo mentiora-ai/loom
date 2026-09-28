@@ -5,7 +5,7 @@
 //! `wait_for` reuses the exact SettleDriver / ReadinessMonitor the navigate
 //! gate uses, but with NO navigation and NO capture — it waits on the current
 //! page and returns only the settle verdict. These cases drive the wiring with
-//! `LOOM_FAKE_CHROMIUM_SCRIPT` (see `fake-chromium.rs`) and assert the verdict
+//! `LOOM_FAKE_CHROMIUM_SCRIPT` (see `fake-chromium/settle_script.rs`) and assert the verdict
 //! reaches `WaitOutcome` end-to-end:
 //!
 //!   - clean page → `reached` (the default fake page settles immediately).

@@ -35,7 +35,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // The synthesized-output cap = the inject cap (A14): TTS output flows through the
 // same `inject_audio` bound as any payload. Single source of truth in `wasm_bridge`.
-use crate::wasm_bridge::MAX_INJECT_BYTES;
+use crate::inject_payload::MAX_INJECT_BYTES;
 
 /// Max `text` length accepted (UTF-8 bytes), checked before spawn/POST (PRD D7
 /// "text length is capped").
