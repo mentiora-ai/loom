@@ -183,7 +183,7 @@ proceed as soon as the load event fires without waiting for full quiescence.",
             },
             DEADLINE_MS_PARAM,
         ],
-        returns: "Receipt with `status: \"ok\"`, `side_effects` populated when the click triggered DOM mutations, and `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. Selector miss → `kind: \"js_throw\"`. The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
+        returns: "Receipt with `status: \"ok\"`, `side_effects` populated when the click triggered DOM mutations, and `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. Selector miss → `kind: \"js_throw\"`. The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. `--capture-policy fingerprint` adds no `dom_after_hash` here: web.click is dispatched host-side as trusted input and does not run the guest's post-action DOM fingerprint.",
         example: &["loom", "action", "web.click", "--session", "<SESSION>", "--selector", "#submit"],
     },
     ActionMeta {
@@ -505,7 +505,7 @@ is a constant dispatch-success marker, so replay stays structural.",
             ParamMeta {
                 name: "selector",
                 ty: ParamType::String,
-                doc: "Optional CSS selector to focus before pressing; omit to target the currently focused element.",
+                doc: "Optional locator (the same grammar as `selector` on web.click / web.type: CSS, `css=`, `text=`, `role=`, `frame=`) of the element to focus before pressing; omit to target the currently focused element.",
                 required: false,
             },
             ParamMeta {
@@ -990,7 +990,7 @@ SPA never surfaces a transport `rpc timeout`. Control it with `until` \
             },
             DEADLINE_MS_PARAM,
         ],
-        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. In `fill`: a value a date/time-family input rejects → `kind: \"malformed_value\"`; a disabled/readonly target → `kind: \"not_editable\"`; an element the page removed or replaced before it could be filled, or an unacknowledged prepare step → `kind: \"type_failed\"` (fixed message; no page text). The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
+        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. In `fill`: a value a date/time-family input rejects → `kind: \"malformed_value\"`; a disabled/readonly target → `kind: \"not_editable\"`; an element the page removed or replaced before it could be filled, or an unacknowledged prepare step → `kind: \"type_failed\"` (fixed message; no page text). The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` only `mode: \"value\"` (the guest path) adds `dom_after_hash` (`sha256` of the normalized post-action DOM, content-bearing and in the manifest hash chain); `fill`/`keystrokes` are dispatched host-side as trusted input and carry none.",
         example: &["loom", "action", "web.type", "--session", "<SESSION>", "--selector", "#email", "--text", "user@example.com"],
     },
     ActionMeta {
