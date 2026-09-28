@@ -72,15 +72,29 @@
     } catch (e) {}
   }
 
-  // The synthetic mic: a FRESH MediaStream wrapping the live destination
-  // track(s) on each call, so the page can add/stop/clone tracks without
-  // reaching into our graph. Honors the page calling `track.stop()`/`ended`
-  // (D14) — stopping the destination track simply ends our injection.
-  function micStream() {
+  // The synthetic mic: a FRESH track per getUserMedia — a clone of the
+  // destination track — so the page can add/stop/clone tracks without reaching
+  // into our graph. Honors the page calling `track.stop()`/`ended` (D14):
+  // stopping a clone ends THAT call's microphone only. Handing out the
+  // destination track itself (as before #318) meant a page that ended a call —
+  // `stream.getTracks().forEach((t) => t.stop())`, which a real app must do to
+  // release the microphone — ended the synthetic mic for the rest of the
+  // document: the next getUserMedia returned the same, already-`ended` track,
+  // and every later `say` was injected into a dead track while resolving `ok`.
+  function micTracks() {
     ensureGraph();
-    var tracks = dest.stream.getAudioTracks();
-    for (var i = 0; i < tracks.length; i++) tagInjectedTrack(tracks[i]);
-    return new MediaStream(tracks);
+    var source = dest.stream.getAudioTracks();
+    var out = [];
+    for (var i = 0; i < source.length; i++) {
+      var t = source[i].clone();
+      tagInjectedTrack(t);
+      out.push(t);
+    }
+    return out;
+  }
+
+  function micStream() {
+    return new MediaStream(micTracks());
   }
 
   function wantsAudio(c) { return !!(c && c.audio); }
@@ -105,12 +119,8 @@
           gumSeen = true;
           return origModern({ video: constraints.video }).then(function (real) {
             var out = new MediaStream();
-            ensureGraph();
-            var at = dest.stream.getAudioTracks();
-            for (var i = 0; i < at.length; i++) {
-              tagInjectedTrack(at[i]);
-              out.addTrack(at[i]);
-            }
+            var at = micTracks();
+            for (var i = 0; i < at.length; i++) out.addTrack(at[i]);
             var vt = real.getVideoTracks();
             for (var j = 0; j < vt.length; j++) out.addTrack(vt[j]);
             return out;
@@ -142,12 +152,8 @@
         legacyGum.call(navigator, { video: constraints.video }, function (real) {
           try {
             var out = new MediaStream();
-            ensureGraph();
-            var at = dest.stream.getAudioTracks();
-            for (var i = 0; i < at.length; i++) {
-              tagInjectedTrack(at[i]);
-              out.addTrack(at[i]);
-            }
+            var at = micTracks();
+            for (var i = 0; i < at.length; i++) out.addTrack(at[i]);
             var vt = real.getVideoTracks();
             for (var j = 0; j < vt.length; j++) out.addTrack(vt[j]);
             ok(out);
