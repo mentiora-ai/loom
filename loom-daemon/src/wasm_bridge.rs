@@ -16,6 +16,9 @@
 //! fence + activity guard live in `crate::core_bridge`.
 
 use crate::core_bridge::{acquire_dispatch_slot, ActionActivityGuard};
+use crate::guest_args::*;
+use crate::media_receipts::*;
+use crate::navigate_receipt::*;
 use crate::wire_receipts::*;
 use crate::{map_loom_error, now_epoch_ms, upload_guard};
 use loom_core::core_api_facade::CoreApiFacade;

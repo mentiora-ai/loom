@@ -48,7 +48,10 @@ mod vault_bridge;
 mod auth_perms;
 mod cli_args;
 mod core_bridge;
+mod guest_args;
 mod health;
+mod media_receipts;
+mod navigate_receipt;
 mod tts_backend;
 mod wasm_bridge;
 mod wire_receipts;
@@ -62,6 +65,10 @@ pub(crate) use wasm_bridge::*;
 // `use super::*`) reaches the receipt/payload builders. Non-test daemon code
 // imports them directly from `crate::wire_receipts` (see `wasm_bridge`), so
 // outside test builds this glob has no consumer here.
+#[cfg(test)]
+pub(crate) use guest_args::*;
+#[cfg(test)]
+pub(crate) use navigate_receipt::*;
 #[cfg(test)]
 pub(crate) use wire_receipts::*;
 
@@ -1741,7 +1748,7 @@ mod tests {
     /// The single-source-of-truth mode classifier (decisions.md D8).
     #[test]
     fn classify_web_type_mode_maps_modes_to_dispatch_paths() {
-        use crate::wire_receipts::{classify_web_type_mode, WebTypeDispatch};
+        use crate::guest_args::{classify_web_type_mode, WebTypeDispatch};
         assert_eq!(classify_web_type_mode(None), WebTypeDispatch::Fill);
         assert_eq!(classify_web_type_mode(Some("fill")), WebTypeDispatch::Fill);
         assert_eq!(
