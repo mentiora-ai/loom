@@ -46,12 +46,16 @@ mod vault_bridge;
 // every existing reference in `async_main`, the DI wiring, AND the
 // `#[cfg(test)] mod tests` block (which uses `use super::*`) resolving unchanged.
 mod auth_perms;
+mod bridge_input;
+mod bridge_media;
 mod cli_args;
 mod core_bridge;
 mod guest_args;
 mod health;
+mod inject_payload;
 mod media_receipts;
 mod navigate_receipt;
+mod settle_budget;
 mod tts_backend;
 mod wasm_bridge;
 mod wire_receipts;
@@ -1416,7 +1420,7 @@ mod tests {
     /// would re-collapse the recv to the ~30s floor.)
     #[test]
     fn interaction_dispatch_budget_leaves_room_for_a_real_ack() {
-        use crate::wasm_bridge::interaction_dispatch_budget_ms;
+        use crate::settle_budget::interaction_dispatch_budget_ms;
         // No deadline (and the loom `Some(0)` == no-deadline convention) → base.
         assert_eq!(interaction_dispatch_budget_ms(None), 10_000);
         assert_eq!(interaction_dispatch_budget_ms(Some(0)), 10_000);
@@ -1445,7 +1449,7 @@ mod tests {
     /// well inside the 15s tools/call deadline.
     #[test]
     fn interaction_settle_budget_is_bounded_inside_deadline() {
-        use crate::wasm_bridge::interaction_settle_budget_ms;
+        use crate::settle_budget::interaction_settle_budget_ms;
         // No deadline → fixed default, comfortably under the 15s RPC deadline.
         assert_eq!(interaction_settle_budget_ms(None, 0), 10_000);
         // loom convention: `Some(0)` ALSO means "no deadline" → full base budget,
