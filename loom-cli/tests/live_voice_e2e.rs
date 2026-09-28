@@ -1020,6 +1020,133 @@ fn inject_audio_delivers_samples_to_mic_track() {
     );
 }
 
+// ── #318 real-browser proof: a second call in the same document still has a microphone ──
+//
+// A voice-call page ends a call with `stream.getTracks().forEach((t) => t.stop())` — that is how a real app
+// releases the microphone. The synthetic mic used to hand every getUserMedia the SAME destination track, so the
+// page's stop() ended it for the whole document: the next getUserMedia returned that already-`ended` track and
+// every later inject was spoken into a dead track while resolving ok (a hollie ATS voice spec's second call reached
+// the agent with zero caller audio). This tap stops call 1's track first, then taps call 2's.
+const SECOND_CALL_TAP_SETUP: &str = r#"
+(async () => {
+  window.__loomInjectPeak = 0;
+  window.__loomTapError = null;
+  try {
+    const first = (await navigator.mediaDevices.getUserMedia({ audio: true })).getAudioTracks()[0];
+    first.stop();
+    const track = (await navigator.mediaDevices.getUserMedia({ audio: true })).getAudioTracks()[0];
+    window.__loomSecondCall = { sameTrack: track === first, state: track ? track.readyState : 'none' };
+    if (!track) { window.__loomTapError = 'no audio track'; return JSON.stringify({ ok: false }); }
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    (async () => {
+      for (;;) {
+        const { value: frame, done } = await reader.read();
+        if (done || !frame) break;
+        try {
+          const opts = { planeIndex: 0, format: 'f32-planar' };
+          const buf = new Float32Array(frame.allocationSize(opts) / 4);
+          frame.copyTo(buf, opts);
+          for (let i = 0; i < buf.length; i++) {
+            const a = Math.abs(buf[i]);
+            if (a > window.__loomInjectPeak) window.__loomInjectPeak = a;
+          }
+        } catch (e) { /* non-f32 frame; skip */ }
+        frame.close();
+      }
+    })();
+    return JSON.stringify({ ok: true });
+  } catch (e) {
+    window.__loomTapError = String((e && (e.message || e.name)) || e);
+    return JSON.stringify({ ok: false });
+  }
+})()
+"#;
+
+#[test]
+#[ignore = "real Chromium; gated on LOOM_LIVE_E2E=1 + LOOM_CHROMIUM_PATH"]
+fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
+    if std::env::var("LOOM_LIVE_E2E").as_deref() != Ok("1") {
+        eprintln!("skip: set LOOM_LIVE_E2E=1 + LOOM_CHROMIUM_PATH to run");
+        return;
+    }
+    let chromium = match std::env::var("LOOM_CHROMIUM_PATH") {
+        Ok(p) if Path::new(&p).exists() => p,
+        _ => {
+            eprintln!("skip: LOOM_CHROMIUM_PATH unset/missing");
+            return;
+        }
+    };
+    let mut harness = DaemonTestHarness::new()
+        .env("LOOM_CHROMIUM_PATH", &chromium)
+        .env("LOOM_CHROMIUM_EXTRA_FLAGS", CHROMIUM_FLAGS)
+        .with_ready_timeout(std::time::Duration::from_secs(30));
+    provision_web_world(harness.home());
+    harness.start();
+    let sid = {
+        let out = run_loom(
+            &harness,
+            &["session", "create", "--profile", "standard", "--no-determinism", "--audio"],
+        );
+        let v: serde_json::Value = serde_json::from_str(&out.stdout)
+            .unwrap_or_else(|e| panic!("session create not JSON: {e}; stderr={:?}", out.stderr));
+        v["session_id"].as_str().expect("session_id").to_string()
+    };
+    let url = serve(FIXTURE_HTML);
+    let nav = run_loom(
+        &harness,
+        &["action", "web.navigate", "--session", &sid, "--url", &url, "--until", "load"],
+    );
+    let nav_receipt: serde_json::Value = serde_json::from_str(&nav.stdout)
+        .unwrap_or_else(|e| panic!("navigate not JSON: {e}; stderr={:?}", nav.stderr));
+    assert_eq!(nav_receipt["status"], "success", "navigate must succeed; got {nav_receipt}");
+    let tap = run_loom(
+        &harness,
+        &["action", "web.evaluate", "--session", &sid, "--expression", SECOND_CALL_TAP_SETUP],
+    );
+    assert!(
+        tap.stdout.contains("\"ok\":true") || tap.stdout.contains("ok\": true"),
+        "second-call tap setup failed: stdout={} stderr={:?}",
+        truncate(&tap.stdout, 400),
+        tap.stderr
+    );
+    let b64 = base64_encode(&tone_wav());
+    let inject = run_loom(
+        &harness,
+        &[
+            "action",
+            "web.inject_audio",
+            "--session",
+            &sid,
+            "--audio_b64",
+            &b64,
+            "--await_playout",
+            "true",
+        ],
+    );
+    let inject_receipt: serde_json::Value = serde_json::from_str(&inject.stdout)
+        .unwrap_or_else(|e| panic!("inject not JSON: {e}; stdout={} stderr={:?}", inject.stdout, inject.stderr));
+    assert_eq!(inject_receipt["status"], "success", "inject_audio must succeed; got {inject_receipt}");
+    let probe = evaluate_probe(
+        &harness,
+        &sid,
+        "JSON.stringify({ stage: 'ok', peak: window.__loomInjectPeak || 0, \
+         message: JSON.stringify(window.__loomSecondCall || {}) + ' ' + String(window.__loomTapError || '') })",
+    );
+    let _ = run_loom(&harness, &["session", "close", &sid]);
+    assert!(
+        probe.message.contains("\"sameTrack\":false") && probe.message.contains("\"state\":\"live\""),
+        "call 2 must get a FRESH, live track, not call 1's stopped one: {}",
+        probe.message
+    );
+    assert!(
+        probe.peak > 0.05,
+        "injected tone must reach call 2's track: observed peak={} ({})",
+        probe.peak,
+        probe.message
+    );
+    eprintln!("#318 OK — call 2 got a fresh live track and the tone reached it, peak={}", probe.peak);
+}
+
 // ── decision-model tests (no browser; these run in normal CI) ────────────────
 //
 // The live probe cannot be red-then-green — the "implementation" is Chromium. These give the
