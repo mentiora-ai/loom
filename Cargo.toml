@@ -36,9 +36,9 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_jcs = "0.2"
 
 # WASM (loom-host only)
-wasmtime = { version = "48", features = ["component-model", "async"] }
-wasmtime-wasi = "48"
-wit-bindgen = "0.61"
+wasmtime = { version = "49", features = ["component-model", "async"] }
+wasmtime-wasi = "49"
+wit-bindgen = "0.62"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 gimli = "0.34"
 addr2line = "0.27"
@@ -77,7 +77,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 # loom-rpc: auth + schema validation
 rand = "0.10"
-jsonschema = "0.52"
+jsonschema = "0.57"
 subtle = "2"
 hex = "0.4"
 sha2 = "0.11"
