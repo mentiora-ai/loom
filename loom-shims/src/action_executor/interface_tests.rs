@@ -198,7 +198,7 @@ fn action_error_to_response_works_without_session_id() {
 
 #[test]
 fn extract_nav_error_text_returns_some_when_error_text_is_non_empty() {
-    use super::action_executor::extract_nav_error_text;
+    use super::page_extract::extract_nav_error_text;
     let response = CborValue::Map(vec![
         (
             CborValue::Text("frameId".into()),
@@ -217,7 +217,7 @@ fn extract_nav_error_text_returns_some_when_error_text_is_non_empty() {
 
 #[test]
 fn extract_nav_error_text_returns_none_when_field_absent() {
-    use super::action_executor::extract_nav_error_text;
+    use super::page_extract::extract_nav_error_text;
     let response = CborValue::Map(vec![
         (
             CborValue::Text("frameId".into()),
@@ -233,7 +233,7 @@ fn extract_nav_error_text_returns_none_when_field_absent() {
 
 #[test]
 fn extract_nav_error_text_returns_none_when_field_empty() {
-    use super::action_executor::extract_nav_error_text;
+    use super::page_extract::extract_nav_error_text;
     // CDP returns an empty errorText on success — must not synthesize an
     // error event.
     let response = CborValue::Map(vec![(
@@ -276,7 +276,7 @@ fn attribution(frame_id: &str, loader_id: &str) -> EventAttribution {
 
 #[test]
 fn main_document_index_excludes_iframe_404_by_loader() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     // Iframe document 404 first (different loader), main 200 second —
     // the verdict must point at the main document, not the iframe.
     let events = vec![
@@ -297,7 +297,7 @@ fn main_document_index_excludes_iframe_404_by_loader() {
 
 #[test]
 fn main_document_index_none_when_only_iframe_events() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     let events = vec![(
         doc_event(404, None),
         attribution("frame-iframe", "loader-iframe"),
@@ -311,7 +311,7 @@ fn main_document_index_none_when_only_iframe_events() {
 
 #[test]
 fn main_document_index_excludes_iframe_transport_failure() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     // A blocklist-gated iframe document (Fetch.failRequest →
     // loadingFailed, attributed via requestWillBeSent backfill) must
     // not fail the navigate.
@@ -333,7 +333,7 @@ fn main_document_index_excludes_iframe_transport_failure() {
 
 #[test]
 fn main_document_index_prefers_http_status_over_paired_transport_error() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     // Chromium pairs ERR_HTTP_RESPONSE_CODE_FAILURE with the 4xx
     // responseReceived for empty-body responses; HTTP-first ordering
     // must pick the status-bearing event even when the failure event
@@ -356,7 +356,7 @@ fn main_document_index_prefers_http_status_over_paired_transport_error() {
 
 #[test]
 fn main_document_index_falls_back_to_frame_match_without_loaders() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     let events = vec![
         (doc_event(404, None), attribution("frame-iframe", "")),
         (doc_event(200, None), attribution("frame-main", "")),
@@ -370,7 +370,7 @@ fn main_document_index_falls_back_to_frame_match_without_loaders() {
 
 #[test]
 fn main_document_index_treats_unattributed_events_as_main() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     // Harnesses (and synthetic Page.navigate-errorText events) carry no
     // frame/loader ids; conservative fallback keeps the pre-attribution
     // failure semantics so transport failures are never dropped.
@@ -386,7 +386,7 @@ fn main_document_index_treats_unattributed_events_as_main() {
 
 #[test]
 fn main_document_index_excludes_stale_prior_load_by_loader() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     // A late event from a superseded prior load keeps its ORIGINAL
     // loaderId; loader-first matching excludes it even though the
     // frameId equals the (persistent) main frame.
@@ -408,7 +408,7 @@ fn main_document_index_excludes_stale_prior_load_by_loader() {
 
 #[test]
 fn main_document_index_none_when_no_events() {
-    use super::action_executor::find_main_document_index;
+    use super::page_extract::find_main_document_index;
     assert_eq!(
         find_main_document_index(&[], "frame-main", "loader-main"),
         None
