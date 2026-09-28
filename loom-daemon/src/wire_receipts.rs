@@ -655,6 +655,30 @@ pub(crate) fn build_input_dispatch_receipt(
             "unknown_key",
             "unknown key name or modifier".to_string(),
         ),
+        // Fixed wording only: neither the typed text (F7) nor anything the page
+        // produced reaches the message.
+        O::MalformedValue(input_type) => recording_error_receipt(
+            action_id,
+            session_id,
+            "malformed_value",
+            format!(
+                "the {} input rejected the value; it keeps {}",
+                input_type.as_str(),
+                input_type.expected_format()
+            ),
+        ),
+        O::NotEditable => recording_error_receipt(
+            action_id,
+            session_id,
+            "not_editable",
+            "element is disabled or readonly".to_string(),
+        ),
+        O::FillFailed(failure) => recording_error_receipt(
+            action_id,
+            session_id,
+            "type_failed",
+            failure.message().to_string(),
+        ),
     };
     // Stamp the action_hash so the host-side input verbs carry the same receipt
     // contract as the guest-dispatched interaction verbs (every interaction

@@ -6,6 +6,30 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`web.type` fills native date/time inputs** — Chromium ignores `Input.insertText` on
+  `<input type=date|time|datetime-local|month|week|color|range>`, so the default `fill` reported
+  success and left the field empty. Fill now sets these inputs by value, the way their native
+  pickers do (native `HTMLInputElement` value setter, read-back, then `input` + `change`, so a
+  React-controlled input sees the change), and a value the input rejects or normalises is a typed
+  `malformed_value` error (the field keeps the value it held) instead of a silent success.
+- **`role=` finds date/time inputs** — a date, time, datetime-local, month, week or color
+  `<input>` is now a `textbox` to the `role=` locator (Playwright's implicit role), so
+  `role=textbox[name="First day"]` resolves a labelled date field. The resolver still keeps the
+  shortest matching accessible name, so where a date-family input's label is shorter than today's
+  match it now wins a `role=textbox[name=…]` selector. Other input types are unchanged.
+- **`web.type` through a locator replaces instead of prepending** — fill's select-all step
+  re-queried the raw selector with `document.querySelector`, which throws on `role=`, `text=`,
+  `css=` and `frame=` locators, so the field was never cleared and the text landed in front of
+  the existing value (`"old"` → `"newold"`). Fill now acts on the element the locator resolved to.
+
+### Changed
+
+- **`web.type` fill refuses a disabled or readonly target** with `kind: "not_editable"`
+  (Playwright parity). A fill into a disabled text field used to succeed silently without
+  changing it. `mode: "value"` still writes without checks when that is deliberately wanted.
+
 ## [0.15.4] — 2026-09-28 — Dependency & Security Refresh
 
 A patch release with no feature changes: it clears three security advisories and
