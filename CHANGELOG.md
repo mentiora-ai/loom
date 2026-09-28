@@ -6,6 +6,18 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.5] — 2026-09-28 — Guest verbs take locators, a bare `web.type` hashes as fill
+
+A patch release. `web.select`, `web.hover`, `web.scroll` and `web.type mode:"value"` now
+resolve the same `css=` / `text=` / `role=` / `frame=` locator grammar as `web.click`,
+where they used to throw on anything but plain CSS (#324). A bare `web.type`'s receipt
+`action_hash` now hashes the `fill` path it takes, not `value` (#322). **Note:** NEW
+recordings of a bare `web.type` therefore get a different `action_hash` than older
+recordings of the same script; replay is structural and unaffected. Plain-CSS guest-verb
+payloads are byte-identical, so those recordings keep their hashes. The rest is internal:
+the oversized files are split with no behavior change, and the macOS e2e job's fixture
+server is polled instead of slept on. (#338)
+
 ### Fixed
 
 - **`web.select`, `web.hover`, `web.scroll` and `web.type mode:"value"` take the locator

@@ -14,7 +14,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.15.4"
+version = "0.15.5"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.92"
@@ -104,17 +104,17 @@ libc = "0.2"
 # transitively pulls async-tungstenite for real CDP).
 tokio-tungstenite = "0.30"
 
-# Internal crates. `version = "0.15.4"` matches `[workspace.package].version`
+# Internal crates. `version = "0.15.5"` matches `[workspace.package].version`
 # above; matters for cargo-deny's `bans.wildcards` check (path-only deps are
 # treated as wildcards). Bump both in lockstep.
-loom-shared = { path = "loom-shared", version = "0.15.4" }
-loom-keychain = { path = "loom-keychain", version = "0.15.4" }
-loom-core = { path = "loom-core", version = "0.15.4" }
-loom-host = { path = "loom-host", version = "0.15.4" }
-loom-rpc = { path = "loom-rpc", version = "0.15.4" }
-loom-mcp = { path = "loom-mcp", version = "0.15.4" }
-loom-daemon = { path = "loom-daemon", version = "0.15.4" }
-loom-shims = { path = "loom-shims", version = "0.15.4" }
+loom-shared = { path = "loom-shared", version = "0.15.5" }
+loom-keychain = { path = "loom-keychain", version = "0.15.5" }
+loom-core = { path = "loom-core", version = "0.15.5" }
+loom-host = { path = "loom-host", version = "0.15.5" }
+loom-rpc = { path = "loom-rpc", version = "0.15.5" }
+loom-mcp = { path = "loom-mcp", version = "0.15.5" }
+loom-daemon = { path = "loom-daemon", version = "0.15.5" }
+loom-shims = { path = "loom-shims", version = "0.15.5" }
 
 # Workspace-wide lint policy. Each member crate opts in via `[lints] workspace = true`
 # so a future addition to this list propagates without per-crate edits. The CI
