@@ -31,7 +31,8 @@
 //!   (an unknown verdict), `no_object` / `resolve_error` (`DOM.resolveNode`
 //!   returns no objectId / a CDP error), or `swallow_resolve` / `swallow_call`
 //!   (that message is never answered — a lost ack). `"release_error": true` makes
-//!   `Runtime.releaseObjectGroup` fail.
+//!   `Runtime.releaseObjectGroup` fail; `"slow_focus_ms": N` answers `DOM.focus`
+//!   N ms late (a budget spent during selector resolution, on any host).
 //! - `LOOM_FAKE_CHROMIUM_SCRIPT` — path to a JSON file driving the
 //!   settle-capture readiness probe deterministically across ticks. Shape:
 //!   `{ "settle_probe": [[ready_complete, "href", dom_mutations], ...],
@@ -313,6 +314,14 @@ async fn handle_connection(
         // budget and report an error — never a success, never the 30 s recv floor.
         if fill_prepare_ack_swallowed(&method, &params) {
             continue;
+        }
+        // Fixture `slow_focus_ms`: answer `DOM.focus` late, so a caller's budget is
+        // spent by selector resolution whatever the host's speed.
+        if method == "DOM.focus" && dom_fixture().slow_focus_ms > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                dom_fixture().slow_focus_ms,
+            ))
+            .await;
         }
 
         // Withhold ONLY the PRE-COMMIT (`mouseMoved`) ack; the committing frames
@@ -2130,6 +2139,8 @@ struct DomFixture {
     inputs: HashMap<String, String>,
     /// `Runtime.releaseObjectGroup` answers with a CDP error.
     release_error: bool,
+    /// Delay before answering `DOM.focus`, in milliseconds (0 = none).
+    slow_focus_ms: u64,
 }
 
 static FIXTURE: OnceLock<DomFixture> = OnceLock::new();
@@ -2179,6 +2190,7 @@ fn load_dom_fixture() -> DomFixture {
         .get("release_error")
         .and_then(|r| r.as_bool())
         .unwrap_or(false);
+    out.slow_focus_ms = v.get("slow_focus_ms").and_then(|r| r.as_u64()).unwrap_or(0);
     if let Some(boxes_obj) = v.get("boxes").and_then(|b| b.as_object()) {
         // Stable id assignment: deterministic ordering by selector string.
         let mut keys: Vec<&String> = boxes_obj.keys().collect();

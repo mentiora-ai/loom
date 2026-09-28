@@ -876,12 +876,13 @@ async fn fill_prepare_lost_ack_is_a_bounded_error() {
 #[tokio::test]
 #[ignore = "requires fake-chromium binary; run `cargo build -p loom-shims --features fake-chromium-bin --bin fake-chromium` first"]
 async fn fill_with_a_spent_deadline_writes_nothing() {
-    let fixture = r##"{"boxes":{"#text":[10.0,20.0,110.0,60.0],"#when":[10.0,80.0,110.0,120.0]},"inputs":{"#when":"set"}}"##;
+    // DOM.focus answers 60 ms late, so selector resolution alone spends a 10 ms
+    // budget on any host (a fast CI runner resolves a warm fixture in <1 ms).
+    let fixture = r##"{"boxes":{"#text":[10.0,20.0,110.0,60.0],"#when":[10.0,80.0,110.0,120.0]},"inputs":{"#when":"set"},"slow_focus_ms":60}"##;
     let (mgr, id, _udd, log_path) = fill_prepare_manager("fill-spent-deadline", fixture);
     for sel in ["#text", "#when"] {
-        // 1 ms: selector resolution alone (several shim round-trips) spends it.
         let err = mgr
-            .send_type_fill(id.clone(), 0, 0, sel.into(), "2036-12-31".into(), 1)
+            .send_type_fill(id.clone(), 0, 0, sel.into(), "2036-12-31".into(), 10)
             .await
             .expect_err(&format!("{sel}: a spent deadline must be an error"));
         assert!(err.to_string().contains("deadline ran out"), "{sel}: {err}");
