@@ -73,7 +73,7 @@ path = "src/lib.rs"
 
 [[bin]]
 name = "fake-chromium"
-path = "src/bin/fake-chromium.rs"
+path = "src/bin/fake-chromium/main.rs"
 required-features = ["fake-chromium-bin"]
 
 # The `loom-shim-chromium` binary lives in `loom-cli` so

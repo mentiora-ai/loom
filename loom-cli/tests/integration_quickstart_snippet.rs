@@ -27,7 +27,7 @@
 //! `fake-chromium` (the test CDP endpoint) intercepts ALL navigation and
 //! returns scripted responses keyed by URL path: `http://fake.test/status/200`
 //! deterministically yields a 200 success receipt (see
-//! `loom-shims/src/bin/fake-chromium.rs`). So this test exercises the exact
+//! `loom-shims/src/bin/fake-chromium/`). So this test exercises the exact
 //! command *form* the README documents — proving the single-`--session`
 //! invocation parses and round-trips through the daemon — while staying
 //! hermetic. The README-text form itself is locked by the no-spawn test above.

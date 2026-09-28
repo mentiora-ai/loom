@@ -9,7 +9,7 @@
 //! page actually drives the live `SettleDriver` → `ReadinessMachine` →
 //! `NavigateOutcome` chain to the same verdict. Each case scripts the page via
 //! `LOOM_FAKE_CHROMIUM_SCRIPT` (a per-tick settle-probe feed + optional
-//! perpetual in-flight requests; see `fake-chromium.rs`):
+//! perpetual in-flight requests; see `fake-chromium/settle_script.rs`):
 //!
 //!   (a) Client-side redirect SPA: the probe reports the shell URL, then the
 //!       final URL, then quiesces. Assert the capture is gated until AFTER the

@@ -4,7 +4,7 @@
 //! `loom-shim-chromium` binary, which spawns the test-only
 //! `fake-chromium` binary. fake-chromium pattern-matches the
 //! Runtime.evaluate `expression` field and emits synthetic CDP
-//! response bodies (see `bin/fake-chromium.rs::build_fake_evaluate_response`).
+//! response bodies (see `bin/fake-chromium/evaluate.rs::build_fake_evaluate_response`).
 //!
 //! Behaviours covered:
 //!   - integer result (`1+1` analogue) → return_value
