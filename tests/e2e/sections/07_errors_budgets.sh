@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tests/e2e/sections/06_errors_budgets.sh — Sections 16–17: typed errors and budget enforcement.
+# tests/e2e/sections/07_errors_budgets.sh — Sections 16–17: typed errors and budget enforcement.
 # Sourced by run_e2e.sh, in order: uses its config, the helpers in
 # lib/e2e_helpers.sh and the state earlier sections set.
 

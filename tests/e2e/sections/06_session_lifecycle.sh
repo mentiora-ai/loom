@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tests/e2e/sections/05_session_lifecycle.sh — Sections 12–15: inspect/validate, time-travel inspect, close, replay equality.
+# tests/e2e/sections/06_session_lifecycle.sh — Sections 12–15: inspect/validate, time-travel inspect, close, replay equality.
 # Sourced by run_e2e.sh, in order: uses its config, the helpers in
 # lib/e2e_helpers.sh and the state earlier sections set.
 

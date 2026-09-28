@@ -21,6 +21,7 @@ CHECKOUT_URL="http://127.0.0.1:${FIXTURE_PORT}/checkout.html"
 UPLOAD_URL="http://127.0.0.1:${FIXTURE_PORT}/upload.html"
 DATES_URL="http://127.0.0.1:${FIXTURE_PORT}/dates.html"
 LOCATORS_URL="http://127.0.0.1:${FIXTURE_PORT}/locators.html"
+LABELS_URL="http://127.0.0.1:${FIXTURE_PORT}/labels.html"
 # Absolute fixtures dir — the daemon under test MUST be started with
 # LOOM_UPLOAD_ROOT set to this path for the web.set_input_files happy-path
 # to pass (fail-closed otherwise). The harness asserts that contract.
@@ -51,10 +52,11 @@ source "$HERE/sections/01_core_verbs.sh"
 source "$HERE/sections/02_set_input_files.sh"
 source "$HERE/sections/03_fill_dates.sh"
 source "$HERE/sections/04_guest_locators.sh"
-source "$HERE/sections/05_session_lifecycle.sh"
-source "$HERE/sections/06_errors_budgets.sh"
-source "$HERE/sections/07_parallel_flows.sh"
-source "$HERE/sections/08_determinism.sh"
+source "$HERE/sections/05_label_names.sh"
+source "$HERE/sections/06_session_lifecycle.sh"
+source "$HERE/sections/07_errors_budgets.sh"
+source "$HERE/sections/08_parallel_flows.sh"
+source "$HERE/sections/09_determinism.sh"
 
 # -- Summary ------------------------------------------------------------
 sect "Summary"

@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html>
+<head><title>Loom E2E Labels Fixture</title></head>
+<body>
+<!-- Section 11e: a control nested in its <label> (no for=, no id) takes the label's text as its
+     accessible name. The wrapped-email shape is hollie's Team page. -->
+<label id="wrapped-email" class="field"><span>Work email</span><input type="email"></label>
+<label id="wrapped-plan">Plan <select><option value="a">Alpha</option><option value="b">Beta</option></select></label>
+<label for="explicit">Explicit field</label><input id="explicit" type="text">
+</body>
+</html>

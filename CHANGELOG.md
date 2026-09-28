@@ -6,6 +6,19 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`role=` names a control by the `<label>` wrapping it** — the accessible-name subset read only
+  `<label for=…>` and placeholders, so a control nested in its label (`<label><span>Email
+  address</span><input type="email"></label>`, no `id`) had no name, and
+  `role=textbox[name="Email address"]` did not resolve. A wrapped `<select>` was named after its
+  options instead (`role=combobox[name="Alpha"]` matched it). A control's name now comes from its
+  labels, `for=` and wrapping alike (Playwright parity), and a wrapping label contributes only its
+  own text, never the control's. This applies to both resolver paths: host-side
+  `web.click`/`web.type`/`web.press_key`, and the guest verbs. Because the guest verbs hash the
+  JS they send, new recordings of a guest verb with a `role=` locator get a different
+  `action_hash`; replay is unaffected, and plain CSS is unchanged.
+
 ## [0.15.5] — 2026-09-28 — Guest verbs take locators, a bare `web.type` hashes as fill
 
 A patch release. `web.select`, `web.hover`, `web.scroll` and `web.type mode:"value"` now

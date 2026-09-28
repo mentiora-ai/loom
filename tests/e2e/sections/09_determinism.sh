@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tests/e2e/sections/08_determinism.sh — Section 21: cross-run determinism.
+# tests/e2e/sections/09_determinism.sh — Section 21: cross-run determinism.
 # Sourced by run_e2e.sh, in order: uses its config, the helpers in
 # lib/e2e_helpers.sh and the state earlier sections set.
 

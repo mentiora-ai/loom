@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# tests/e2e/sections/07_parallel_flows.sh — Sections 18–20: parallel sessions, the checkout flow, a real public site.
+# tests/e2e/sections/08_parallel_flows.sh — Sections 18–20: parallel sessions, the checkout flow, a real public site.
 # Sourced by run_e2e.sh, in order: uses its config, the helpers in
 # lib/e2e_helpers.sh and the state earlier sections set.
 
