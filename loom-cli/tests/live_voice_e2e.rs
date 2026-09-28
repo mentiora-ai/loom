@@ -1085,7 +1085,14 @@ fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
     let sid = {
         let out = run_loom(
             &harness,
-            &["session", "create", "--profile", "standard", "--no-determinism", "--audio"],
+            &[
+                "session",
+                "create",
+                "--profile",
+                "standard",
+                "--no-determinism",
+                "--audio",
+            ],
         );
         let v: serde_json::Value = serde_json::from_str(&out.stdout)
             .unwrap_or_else(|e| panic!("session create not JSON: {e}; stderr={:?}", out.stderr));
@@ -1094,14 +1101,33 @@ fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
     let url = serve(FIXTURE_HTML);
     let nav = run_loom(
         &harness,
-        &["action", "web.navigate", "--session", &sid, "--url", &url, "--until", "load"],
+        &[
+            "action",
+            "web.navigate",
+            "--session",
+            &sid,
+            "--url",
+            &url,
+            "--until",
+            "load",
+        ],
     );
     let nav_receipt: serde_json::Value = serde_json::from_str(&nav.stdout)
         .unwrap_or_else(|e| panic!("navigate not JSON: {e}; stderr={:?}", nav.stderr));
-    assert_eq!(nav_receipt["status"], "success", "navigate must succeed; got {nav_receipt}");
+    assert_eq!(
+        nav_receipt["status"], "success",
+        "navigate must succeed; got {nav_receipt}"
+    );
     let tap = run_loom(
         &harness,
-        &["action", "web.evaluate", "--session", &sid, "--expression", SECOND_CALL_TAP_SETUP],
+        &[
+            "action",
+            "web.evaluate",
+            "--session",
+            &sid,
+            "--expression",
+            SECOND_CALL_TAP_SETUP,
+        ],
     );
     assert!(
         tap.stdout.contains("\"ok\":true") || tap.stdout.contains("ok\": true"),
@@ -1123,9 +1149,17 @@ fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
             "true",
         ],
     );
-    let inject_receipt: serde_json::Value = serde_json::from_str(&inject.stdout)
-        .unwrap_or_else(|e| panic!("inject not JSON: {e}; stdout={} stderr={:?}", inject.stdout, inject.stderr));
-    assert_eq!(inject_receipt["status"], "success", "inject_audio must succeed; got {inject_receipt}");
+    let inject_receipt: serde_json::Value =
+        serde_json::from_str(&inject.stdout).unwrap_or_else(|e| {
+            panic!(
+                "inject not JSON: {e}; stdout={} stderr={:?}",
+                inject.stdout, inject.stderr
+            )
+        });
+    assert_eq!(
+        inject_receipt["status"], "success",
+        "inject_audio must succeed; got {inject_receipt}"
+    );
     let probe = evaluate_probe(
         &harness,
         &sid,
@@ -1134,7 +1168,8 @@ fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
     );
     let _ = run_loom(&harness, &["session", "close", &sid]);
     assert!(
-        probe.message.contains("\"sameTrack\":false") && probe.message.contains("\"state\":\"live\""),
+        probe.message.contains("\"sameTrack\":false")
+            && probe.message.contains("\"state\":\"live\""),
         "call 2 must get a FRESH, live track, not call 1's stopped one: {}",
         probe.message
     );
@@ -1144,7 +1179,10 @@ fn inject_audio_reaches_a_second_call_after_the_page_stopped_the_first() {
         probe.peak,
         probe.message
     );
-    eprintln!("#318 OK — call 2 got a fresh live track and the tone reached it, peak={}", probe.peak);
+    eprintln!(
+        "#318 OK — call 2 got a fresh live track and the tone reached it, peak={}",
+        probe.peak
+    );
 }
 
 // ── decision-model tests (no browser; these run in normal CI) ────────────────
