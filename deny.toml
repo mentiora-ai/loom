@@ -116,6 +116,7 @@ wrappers = [
     "ring",            # crypto / vault
     "tempfile",        # temp file naming
     "jsonschema",      # schema validation engine RNG
+    "jsonschema-value", # jsonschema 0.57+ value layer (host-side only)
     "referencing",     # jsonschema URI resolution helpers
     "jobserver",       # build-time make-jobserver client
     "secret-service",  # Linux keychain backend (v0.9.4) — uses getrandom for session-AES IV
