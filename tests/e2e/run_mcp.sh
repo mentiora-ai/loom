@@ -19,10 +19,14 @@ mkdir -p "$RESULTS"
 
 # Boot the fixture server if not already up
 if ! curl -sf "$FIXTURE_URL" >/dev/null; then
-  python3 -m http.server "$FIXTURE_PORT" --directory fixtures >"$RESULTS/mcp-fixture.log" 2>&1 &
-  FX=$!
-  trap 'kill $FX 2>/dev/null || true' EXIT
-  sleep 1
+  # shellcheck source=lib/fixture_server.sh
+  source "$HERE/lib/fixture_server.sh"
+  trap 'kill ${FIXTURE_PID:-} 2>/dev/null || true' EXIT
+  if ! start_fixture_server "$FIXTURE_PORT" "$RESULTS/mcp-fixture.log"; then
+    echo "fixture server did not come up on :$FIXTURE_PORT:" >&2
+    tail -5 "$RESULTS/mcp-fixture.log" >&2
+    exit 1
+  fi
 fi
 
 # Build a sequence of NDJSON requests

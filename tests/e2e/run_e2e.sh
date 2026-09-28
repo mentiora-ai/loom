@@ -33,15 +33,14 @@ mkdir -p "$RESULTS"
 
 # shellcheck source=lib/e2e_helpers.sh
 source "$HERE/lib/e2e_helpers.sh"
+# shellcheck source=lib/fixture_server.sh
+source "$HERE/lib/fixture_server.sh"
 
 # -- Fixture server -----------------------------------------------------
 sect "Booting fixture HTTP server on :${FIXTURE_PORT}"
-python3 -m http.server "$FIXTURE_PORT" --directory fixtures >"$RESULTS/fixture-server.log" 2>&1 &
-FIXTURE_PID=$!
-trap 'kill $FIXTURE_PID 2>/dev/null || true' EXIT
-sleep 1
-if ! curl -sf "$FIXTURE_URL" >/dev/null; then
-  fail "fixture-server-up" "couldn't curl $FIXTURE_URL"
+trap 'kill ${FIXTURE_PID:-} 2>/dev/null || true' EXIT
+if ! start_fixture_server "$FIXTURE_PORT" "$RESULTS/fixture-server.log"; then
+  fail "fixture-server-up" "couldn't curl $FIXTURE_URL; server log: $(tail -5 "$RESULTS/fixture-server.log")"
   exit 1
 fi
 ok "fixture-server-up"
