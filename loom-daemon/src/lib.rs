@@ -1246,6 +1246,38 @@ mod tests {
         assert_ne!(r_a.action_hash, r_other.action_hash);
     }
 
+    /// The web.type action_hash is keyed on the dispatch path actually taken: a
+    /// bare web.type IS a fill, so it hashes like an explicit `mode:"fill"` (it
+    /// used to be labelled "value", the guest path it never took); keystrokes differ.
+    #[test]
+    fn web_type_action_hash_follows_the_dispatch_path() {
+        use crate::wire_receipts::build_input_dispatch_receipt;
+        use loom_host::shim_manager::InputDispatchOutcome;
+        let typed = |mode: Option<&str>| {
+            let action = Action::WebType {
+                session_id: s("sess"),
+                selector: s("#email"),
+                text: s("user@example.com"),
+                mode: mode.map(s),
+                until: None,
+            };
+            build_input_dispatch_receipt(1, "sess", &action, InputDispatchOutcome::Ok).action_hash
+        };
+        assert_eq!(
+            typed(None),
+            typed(Some("fill")),
+            "a bare web.type is a fill"
+        );
+        assert_ne!(typed(None), typed(Some("keystrokes")));
+        assert_eq!(
+            typed(None),
+            Some(loom_core::content_store::sha256_hex(
+                "web.type\u{0}fill\u{0}#email\u{0}user@example.com".as_bytes()
+            )),
+            "canonical form: verb, dispatch path, selector, text"
+        );
+    }
+
     /// NFR-DET-01: `DispatchedAckPending` — a click whose cross-origin navigation
     /// swallowed the mouse-dispatch ack (the input WAS performed) — MUST hash
     /// IDENTICALLY to `Ok`. Whether the record-time ack arrived or was lost to a

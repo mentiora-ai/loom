@@ -746,15 +746,21 @@ fn input_action_hash(action: &Action) -> String {
     let canonical = match action {
         Action::WebClick { selector, .. } => format!("web.click\u{0}{selector}"),
         Action::WebWait { selector, .. } => format!("web.wait\u{0}{selector}"),
+        // Keyed on the dispatch path actually taken (classify_web_type_mode), so a
+        // bare web.type and an explicit `mode:"fill"` — the same fill — hash alike.
         Action::WebType {
             selector,
             text,
             mode,
             ..
-        } => format!(
-            "web.type\u{0}{}\u{0}{selector}\u{0}{text}",
-            mode.as_deref().unwrap_or("value")
-        ),
+        } => {
+            let path = match classify_web_type_mode(mode.as_deref()) {
+                WebTypeDispatch::Fill => "fill",
+                WebTypeDispatch::Keystrokes => "keystrokes",
+                WebTypeDispatch::ValueGuest => "value",
+            };
+            format!("web.type\u{0}{path}\u{0}{selector}\u{0}{text}")
+        }
         Action::WebPressKey {
             key,
             selector,

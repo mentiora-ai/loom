@@ -26,6 +26,11 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **`web.type` receipts: `action_hash` keys on the dispatch path** — a bare `web.type` (mode absent) is a
+  `fill`, and its receipt `action_hash` now hashes `fill`, the same as an explicit `mode: "fill"`; it was
+  labelled `value`, a path it never took. `action_hash` of NEW recordings of a bare `web.type` therefore
+  differs from older recordings of the same script (a `loom session diff` across versions shows it);
+  replay of existing recordings is unaffected (structural). (#322)
 - **`web.type` fill refuses a disabled or readonly target** with `kind: "not_editable"`
   (Playwright parity). A fill into a disabled text field used to succeed silently without
   changing it. `mode: "value"` still writes without checks when that is deliberately wanted.
