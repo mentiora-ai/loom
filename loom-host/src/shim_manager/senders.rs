@@ -65,9 +65,11 @@ static FILL_OBJECT_GROUP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::
 /// Ceiling on waiting for the best-effort release of a fill's object group.
 const FILL_RELEASE_BUDGET_MS: u64 = 250;
 
-/// One deadline shared by every round-trip of a `web.type` fill (resolve,
-/// prepare, insert, release), so their SUM — not each call — stays inside the
-/// action's budget. A budget of `0` keeps its "no deadline" meaning.
+/// One deadline shared by the round-trips of a `web.type` fill that follow
+/// selector resolution (prepare, insert, release): each draws what is LEFT of the
+/// action's budget after resolution, so their sum stays inside it. (Resolution
+/// itself keeps the shared locator path's own floor, as for every input verb.)
+/// A budget of `0` keeps its "no deadline" meaning.
 struct FillDeadline {
     budget_ms: u64,
     started: std::time::Instant,
@@ -79,6 +81,13 @@ impl FillDeadline {
             budget_ms,
             started: std::time::Instant::now(),
         }
+    }
+
+    /// True once a real budget is spent: the fill then sends nothing more that
+    /// could change the page (a write whose ack we could not wait for would leave
+    /// the page changed while the receipt says it timed out).
+    fn exhausted(&self) -> bool {
+        self.budget_ms != 0 && self.started.elapsed().as_millis() >= u128::from(self.budget_ms)
     }
 
     /// Budget left for the next round-trip, floored to 1 ms: `0` would mean
@@ -1415,6 +1424,17 @@ impl ShimManager {
                 ),
             )
         };
+        // The budget ran out before the next write: nothing more is sent, so the
+        // field is exactly as the last acknowledged step left it (never half-typed).
+        let out_of_time = || {
+            LoomError::new(
+                LoomErrorCode::ShimTimeout,
+                format!(
+                    "shim {}: web.type fill: the action's deadline ran out before the text was written",
+                    id.0
+                ),
+            )
+        };
         // Only THAT the page side failed is logged — never its own text (a CDP
         // error about its node, an exception message), which can echo the typed value.
         let failed = |failure: FillFailure| {
@@ -1422,6 +1442,9 @@ impl ShimManager {
             Ok(InputDispatchOutcome::FillFailed(failure))
         };
 
+        if deadline.exhausted() {
+            return Err(out_of_time());
+        }
         let resolved = match self
             .cdp_send_dispatch(
                 id,
@@ -1440,6 +1463,9 @@ impl ShimManager {
             Some(Value::Text(object_id)) => object_id.clone(),
             _ => return failed(FillFailure::NoObject),
         };
+        if deadline.exhausted() {
+            return Err(out_of_time());
+        }
         let verdict = match self
             .cdp_send_dispatch(
                 id,
@@ -1460,6 +1486,7 @@ impl ShimManager {
                 Ok(InputDispatchOutcome::MalformedValue(input_type))
             }
             Ok(FillPrep::NotEditable) => Ok(InputDispatchOutcome::NotEditable),
+            Ok(FillPrep::Insert) if deadline.exhausted() => Err(out_of_time()),
             Ok(FillPrep::Insert) => self
                 .dispatch_input_events(
                     id,
@@ -2262,6 +2289,33 @@ mod locator_resolver_tests {
         for ty in ["number", "range", "file", "image", "hidden"] {
             assert_eq!(input_role(ty), None, "{ty}");
         }
+    }
+
+    #[test]
+    fn fill_deadline_draws_down_one_budget() {
+        let unbounded = FillDeadline::start(0);
+        assert_eq!(
+            unbounded.remaining_ms(),
+            0,
+            "0 keeps its no-deadline meaning"
+        );
+        assert!(!unbounded.exhausted());
+
+        let roomy = FillDeadline::start(60_000);
+        assert!(!roomy.exhausted());
+        let left = roomy.remaining_ms();
+        assert!(left > 59_000 && left <= 60_000, "{left}");
+
+        let spent = FillDeadline {
+            budget_ms: 5,
+            started: std::time::Instant::now() - std::time::Duration::from_millis(50),
+        };
+        assert!(spent.exhausted());
+        assert_eq!(
+            spent.remaining_ms(),
+            1,
+            "floored to 1 ms, never 0 (= no deadline)"
+        );
     }
 
     #[test]

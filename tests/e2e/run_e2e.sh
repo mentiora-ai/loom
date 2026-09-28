@@ -312,16 +312,19 @@ if [[ "$DSESSION" =~ ^[a-z0-9]{26}$ ]]; then
   # A value the input does not accept is a typed error, never a silent success:
   # a reject for EVERY set-value type — a wrong format, or a value the browser
   # normalises or sanitises so the read-back differs (Playwright parity).
-  for pair in 'role=textbox[name="Last day"]|12/31/2036|last-day' '#opens|6pm|time' \
-              '#starts|2036-12-31 18:00|datetime-local' '#billing|Dec 2036|month' \
-              '#sprint|2036-52|week' '#accent|#FF8800|color-upper' '#volume|abc|range'; do
-    selr=${pair%%|*}; rest=${pair#*|}; txt=${rest%%|*}; tag=${rest#*|}
+  # A refusal changes nothing: the field keeps what it held before.
+  for pair in 'role=textbox[name="Last day"]|12/31/2036|last-day|last-day' '#opens|6pm|time|opens' \
+              '#starts|2036-12-31 18:00|datetime-local|starts' '#billing|Dec 2036|month|billing' \
+              '#sprint|2036-52|week|sprint' '#accent|#FF8800|color-upper|accent' '#volume|abc|range|volume'; do
+    selr=${pair%%|*}; rest=${pair#*|}; txt=${rest%%|*}; rest=${rest#*|}; tag=${rest%%|*}; fid=${rest#*|}
+    HELD=$(idval "$DSESSION" "$fid")
     BAD=$(type_ "$DSESSION" "$selr" "$txt")
     echo "$BAD" >"$RESULTS/type-malformed-$tag.json"
-    if echo "$BAD" | grep -q 'malformed_value'; then
+    AFTER=$(idval "$DSESSION" "$fid")
+    if echo "$BAD" | grep -q 'malformed_value' && [ "$AFTER" = "$HELD" ]; then
       ok "type-$tag-malformed-value-typed-error"
     else
-      fail "type-$tag-malformed-value-typed-error" "see $RESULTS/type-malformed-$tag.json"
+      fail "type-$tag-malformed-value-typed-error" "held='$HELD' after='$AFTER' (see $RESULTS/type-malformed-$tag.json)"
     fi
   done
 
@@ -429,6 +432,14 @@ if [[ "$DSESSION" =~ ^[a-z0-9]{26}$ ]]; then
     ok "click-role-textbox-resolves-month-input"
   else
     fail "click-role-textbox-resolves-month-input" "see $RESULTS/click-role-month.json"
+  fi
+
+  # No page function reached the typed text through the caller chain.
+  LK=$(dval "$DSESSION" 'window.__leaked.join("|")')
+  if [ -z "$LK" ]; then
+    ok "type-text-not-reachable-via-caller-chain"
+  else
+    fail "type-text-not-reachable-via-caller-chain" "a page function read: '$LK'"
   fi
 
   # Shortest accessible name wins: "Date" (a date input, now a textbox) beats

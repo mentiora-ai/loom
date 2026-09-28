@@ -871,6 +871,31 @@ async fn fill_prepare_lost_ack_is_a_bounded_error() {
     mgr.shutdown_session("fill-lost-ack").await;
 }
 
+/// e2e: once the action's budget is spent, fill sends nothing more that could
+/// change the page — no prepare call, no insertText — and says it ran out of time.
+#[tokio::test]
+#[ignore = "requires fake-chromium binary; run `cargo build -p loom-shims --features fake-chromium-bin --bin fake-chromium` first"]
+async fn fill_with_a_spent_deadline_writes_nothing() {
+    let fixture = r##"{"boxes":{"#text":[10.0,20.0,110.0,60.0],"#when":[10.0,80.0,110.0,120.0]},"inputs":{"#when":"set"}}"##;
+    let (mgr, id, _udd, log_path) = fill_prepare_manager("fill-spent-deadline", fixture);
+    for sel in ["#text", "#when"] {
+        // 1 ms: selector resolution alone (several shim round-trips) spends it.
+        let err = mgr
+            .send_type_fill(id.clone(), 0, 0, sel.into(), "2036-12-31".into(), 1)
+            .await
+            .expect_err(&format!("{sel}: a spent deadline must be an error"));
+        assert!(err.to_string().contains("deadline ran out"), "{sel}: {err}");
+    }
+    let (sent, _) = cdp_log_since(&log_path, 0);
+    for write in ["Runtime.callFunctionOn", "Input.insertText"] {
+        assert!(
+            !sent.contains(write),
+            "{write} sent after the deadline was spent; CDP log:\n{sent}"
+        );
+    }
+    mgr.shutdown_session("fill-spent-deadline").await;
+}
+
 /// e2e: releasing a fill's CDP object group is best-effort — a failing release
 /// never turns a committed fill into an error.
 #[tokio::test]

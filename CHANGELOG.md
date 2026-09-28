@@ -13,7 +13,7 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   success and left the field empty. Fill now sets these inputs by value, the way their native
   pickers do (native `HTMLInputElement` value setter, read-back, then `input` + `change`, so a
   React-controlled input sees the change), and a value the input rejects or normalises is a typed
-  `malformed_value` error instead of a silent success.
+  `malformed_value` error (the field keeps the value it held) instead of a silent success.
 - **`role=` finds date/time inputs** — a date, time, datetime-local, month, week or color
   `<input>` is now a `textbox` to the `role=` locator (Playwright's implicit role), so
   `role=textbox[name="First day"]` resolves a labelled date field. The resolver still keeps the

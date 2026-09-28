@@ -193,11 +193,14 @@ pub(crate) enum FillPrep {
 /// (`:disabled` also covers a disabled `<fieldset>`); a set-value input is written
 /// through the NATIVE `HTMLInputElement.prototype` setter — React's per-instance
 /// value tracker would swallow a plain `el.value =` — and verified by a native
-/// read-back before `input`/`change` fire; anything else is re-focused and has its
-/// content selected, so the `Input.insertText` that follows lands in it and
-/// replaces the content. Every decision reads the platform's own prototype
-/// accessors, not the element's instance properties, which a page (or a framework)
-/// can redefine. Focus/selection stay best-effort (a DOMException is swallowed).
+/// read-back before `input`/`change` fire (a value the input rejects or normalises
+/// is put back to what the field held, so a refusal changes nothing); anything else
+/// is re-focused and has its content selected, so the `Input.insertText` that
+/// follows lands in it and replaces the content. Every decision reads the
+/// platform's own prototype accessors, not the element's instance properties,
+/// which a page (or a framework) can redefine. Strict mode keeps the typed text
+/// out of reach of any page function this calls (`fn.caller` is null for a strict
+/// caller). Focus/selection stay best-effort (a DOMException is swallowed).
 pub(crate) fn fill_prepare_fn() -> &'static str {
     static FN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     FN.get_or_init(|| {
@@ -206,8 +209,9 @@ pub(crate) fn fill_prepare_fn() -> &'static str {
             serde_json::to_string(&set_value_types).unwrap_or_else(|_| "[]".into());
         format!(
             "function(text){{\
+               'use strict';\
                var el=this;\
-               function get(proto,name){{var d=Object.getOwnPropertyDescriptor(proto,name);return d&&d.get?d.get.call(el):undefined;}}\
+               function get(proto,name){{var d=Object.getOwnPropertyDescriptor(proto,name);return d&&d.get?d.get.call(el):el[name];}}\
                if(!get(Node.prototype,'isConnected'))return {{v:'detached'}};\
                var tag=get(Element.prototype,'tagName');\
                var proto=tag==='INPUT'?HTMLInputElement.prototype:tag==='TEXTAREA'?HTMLTextAreaElement.prototype:null;\
@@ -217,8 +221,9 @@ pub(crate) fn fill_prepare_fn() -> &'static str {
                  if({set_value_types}.indexOf(type)!==-1){{\
                    var want=String(text).trim();\
                    var value=Object.getOwnPropertyDescriptor(proto,'value');\
+                   var before=value.get.call(el);\
                    value.set.call(el,want);\
-                   if(value.get.call(el)!==want)return {{v:'malformed',type:type}};\
+                   if(value.get.call(el)!==want){{value.set.call(el,before);return {{v:'malformed',type:type}};}}\
                    EventTarget.prototype.dispatchEvent.call(el,new Event('input',{{bubbles:true,composed:true}}));\
                    EventTarget.prototype.dispatchEvent.call(el,new Event('change',{{bubbles:true}}));\
                    return {{v:'set'}};\
@@ -227,6 +232,7 @@ pub(crate) fn fill_prepare_fn() -> &'static str {
                try{{\
                  HTMLElement.prototype.focus.call(el);\
                  if(proto)proto.select.call(el);\
+                 else if(typeof el.select==='function')el.select();\
                }}catch(_e){{}}\
                return {{v:'insert'}};\
              }}"

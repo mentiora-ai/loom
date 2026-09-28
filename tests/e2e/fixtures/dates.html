@@ -30,6 +30,23 @@
 <label for="dob">Date of birth</label><input id="dob" type="text">
 <label for="just-date">Date</label><input id="just-date" type="date">
 <script>
+// A page function that tries to read the text fill is typing through the
+// caller chain (`arguments.callee.caller.arguments`) — fill's prepare step calls
+// Element.prototype.matches, so this would see its arguments if that step ran in
+// sloppy mode. Strict mode makes `caller` null.
+window.__leaked = [];
+(function () {
+  const matches = Element.prototype.matches;
+  Element.prototype.matches = function (selector) {
+    try {
+      const caller = arguments.callee.caller;
+      if (caller && caller.arguments && caller.arguments.length) {
+        window.__leaked.push(String(caller.arguments[0]));
+      }
+    } catch (e) { /* a strict caller throws or yields null: nothing to read */ }
+    return matches.call(this, selector);
+  };
+})();
 window.__events = [];
 for (const el of document.querySelectorAll('input, textarea')) {
   el.addEventListener('input', () => window.__events.push(el.id + ':input'));

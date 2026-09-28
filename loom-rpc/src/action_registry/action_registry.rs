@@ -933,8 +933,8 @@ controls). \
 The text must be in the input's own value format (`yyyy-mm-dd` for `date`, \
 `hh:mm` for `time`, `yyyy-mm-ddThh:mm` for `datetime-local`, `yyyy-mm`, \
 `yyyy-Www`, lower-case `#rrggbb`, a number the range allows); a value the \
-input rejects or normalises → `kind: \"malformed_value\"` (the browser leaves \
-the field empty). `text: \"\"` clears a date/time/month/week input; `color` and \
+input rejects or normalises → `kind: \"malformed_value\"`, and the field keeps \
+the value it held. `text: \"\"` clears a date/time/month/week input; `color` and \
 `range` cannot be empty, so it is `malformed_value` there. In `fill`, a disabled \
 (including by a disabled `<fieldset>`) or readonly target → \
 `kind: \"not_editable\"`, and nothing is written. An element the page removes or \
