@@ -14,7 +14,7 @@ Every JSON-RPC action loom exposes, with its parameters, return shape, and a cop
 - [`web.delete_cookies`](#web-delete_cookies) — Delete a single cookie scoped by (name, url?, domain?, path?) — CDP `Network.deleteCookies`.
 - [`web.evaluate`](#web-evaluate) — Run a JavaScript expression in the page and return the value.
 - [`web.get_cookies`](#web-get_cookies) — Read cookies from the browser's cookie jar (CDP `Network.getCookies`).
-- [`web.hover`](#web-hover) — Dispatch a mouseover event at a CSS selector.
+- [`web.hover`](#web-hover) — Dispatch a mouseover event at an element (CSS or a text=/role=/frame= locator).
 - [`web.inject_audio`](#web-inject_audio) — Inject caller-provided audio into the page's virtual microphone.
 - [`web.navigate`](#web-navigate) — Load a URL, follow redirects, capture DOM and screenshot.
 - [`web.network_log`](#web-network_log) — Read the per-request network entries observed since the last navigate.
@@ -177,9 +177,9 @@ loom action web.get_cookies --session <SESSION>
 
 ### <a id="web-hover"></a>`web.hover`
 
-**Dispatch a mouseover event at a CSS selector.**
+**Dispatch a mouseover event at an element (CSS or a text=/role=/frame= locator).**
 
-Resolves a CSS query selector and dispatches a synthetic `mouseover` event at the matched element. Useful for triggering hover-state UI (menus, tooltips) before a follow-up `web.click`.
+Resolves the selector in the page and dispatches a synthetic `mouseover` event at the matched element. Useful for triggering hover-state UI (menus, tooltips) before a follow-up `web.click`.
 
 Failure mode: selector miss surfaces as `kind: "js_throw"`. The hover does not wait for the resulting state — pair with `web.wait` on a predicate that observes the hover-induced change if you need to synchronise.
 
@@ -188,7 +188,7 @@ Failure mode: selector miss surfaces as `kind: "js_throw"`. The hover does not w
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `session_id` | `string` | required | Session created via `loom session create`. 26-char ULID format. |
-| `selector` | `string` | required | CSS query selector for the element to hover. |
+| `selector` | `string` | required | Locator for the target element: plain CSS, or the web.click grammar — `css=` / `text=` / `role=` segments and `frame=<css>`, joined by ` >> `. Resolved in the page, so `frame=` reaches same-origin frames only. |
 | `deadline_ms` | `u64` | optional | Optional per-action deadline in milliseconds. On expiry the daemon kills the action with a typed `request_timeout` receipt (the session is NOT fenced and the next call succeeds). Omit or 0 for no deadline. |
 
 **Returns:** Receipt with `status: "ok"`. Selector miss → `kind: "js_throw"`. The `outcome_hash` is `sha256` of the CDP `Runtime.evaluate` response envelope — a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM (content-bearing; in the manifest hash chain). Note a hover that only changes CSS/layout — not the DOM tree — yields a `dom_after_hash` equal to the pre-hover DOM.
@@ -374,7 +374,7 @@ loom action web.screenshot --session <SESSION>
 
 **Scroll the page (or an element) by a (delta_x, delta_y) offset.**
 
-Scrolls by `(delta_x, delta_y)` CSS pixels. With no `selector` (or with `body`/`html`/the document element) it scrolls the viewport via `document.scrollingElement` — so "scroll the page down" needs no selector. With a real CSS selector it scrolls that element. Both deltas are optional and default to 0; passing only one is fine. Useful for revealing virtualised list rows or triggering scroll-based lazy loading before observing the result.
+Scrolls by `(delta_x, delta_y)` CSS pixels. With no `selector` (or with `body`/`html`/the document element) it scrolls the viewport via `document.scrollingElement` — so "scroll the page down" needs no selector. With a selector (CSS or a locator) it scrolls that element. Both deltas are optional and default to 0; passing only one is fine. Useful for revealing virtualised list rows or triggering scroll-based lazy loading before observing the result.
 
 A selector that matches nothing falls back to scrolling the viewport. The scroll does not wait for subsequent layout — pair with `web.wait` on a predicate that checks the post-scroll state if needed.
 
@@ -383,7 +383,7 @@ A selector that matches nothing falls back to scrolling the viewport. The scroll
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `session_id` | `string` | required | Session created via `loom session create`. 26-char ULID format. |
-| `selector` | `string` | optional | CSS query selector for the scrollable element. Optional — omit (or use `body`/`html`) to scroll the page viewport. |
+| `selector` | `string` | optional | Locator for the scrollable element (plain CSS, or the web.click grammar resolved in the page — `frame=` reaches same-origin frames only). Optional — omit (or use `body`/`html`) to scroll the page viewport. |
 | `delta_x` | `i64` | optional | Horizontal scroll offset in CSS pixels. Optional, defaults to 0. |
 | `delta_y` | `i64` | optional | Vertical scroll offset in CSS pixels. Optional, defaults to 0. |
 | `deadline_ms` | `u64` | optional | Optional per-action deadline in milliseconds. On expiry the daemon kills the action with a typed `request_timeout` receipt (the session is NOT fenced and the next call succeeds). Omit or 0 for no deadline. |
@@ -411,7 +411,7 @@ Loom does not validate that `value` matches one of the `<option>` values; the ho
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
 | `session_id` | `string` | required | Session created via `loom session create`. 26-char ULID format. |
-| `selector` | `string` | required | CSS query selector for the `<select>` element. |
+| `selector` | `string` | required | Locator for the target element: plain CSS, or the web.click grammar — `css=` / `text=` / `role=` segments and `frame=<css>`, joined by ` >> `. Resolved in the page, so `frame=` reaches same-origin frames only. |
 | `value` | `string` | required | Value to assign. Should match one of the `<option>` `value` attributes. |
 | `deadline_ms` | `u64` | optional | Optional per-action deadline in milliseconds. On expiry the daemon kills the action with a typed `request_timeout` receipt (the session is NOT fenced and the next call succeeds). Omit or 0 for no deadline. |
 
@@ -622,7 +622,7 @@ By default (`mode: "fill"`) loom selects the field's existing content and commit
 
 Chromium ignores `Input.insertText` on date/time-family inputs, so fill sets `<input type=date|time|datetime-local|month|week|color|range>` BY VALUE, the way their native pickers do: the (trimmed) text goes through the native `HTMLInputElement` value setter, is read back, and `input` then `change` fire (synthetic, `isTrusted:false` — Chromium has no trusted edit path for these controls). The text must be in the input's own value format (`yyyy-mm-dd` for `date`, `hh:mm` for `time`, `yyyy-mm-ddThh:mm` for `datetime-local`, `yyyy-mm`, `yyyy-Www`, lower-case `#rrggbb`, a number the range allows); a value the input rejects or normalises → `kind: "malformed_value"`, and the field keeps the value it held. `text: ""` clears a date/time/month/week input; `color` and `range` cannot be empty, so it is `malformed_value` there. In `fill`, a disabled (including by a disabled `<fieldset>`) or readonly target → `kind: "not_editable"`, and nothing is written. An element the page removes or replaces before it can be filled → `kind: "type_failed"`.
 
-`mode: "value"` is the legacy path: set `.value` via `Runtime.evaluate` + synthetic `input`/`change` events (`isTrusted:false`). It updates the DOM value but trust-gating frameworks treat it as not user-entered — kept as a back-compat escape hatch (it takes a bare CSS selector, and writes even a disabled field or a value the input would normalise). `mode: "keystrokes"` dispatches a REAL per-character CDP `Input.dispatchKeyEvent` sequence (`isTrusted:true`) — not a way to fill date/time-family inputs, whose segmented editors take locale-ordered keys.
+`mode: "value"` is the legacy path: set `.value` via `Runtime.evaluate` + synthetic `input`/`change` events (`isTrusted:false`). It updates the DOM value but trust-gating frameworks treat it as not user-entered — kept as a back-compat escape hatch (it resolves the locator in the page, so `frame=` reaches same-origin frames only, and writes even a disabled field or a value the input would normalise). `mode: "keystrokes"` dispatches a REAL per-character CDP `Input.dispatchKeyEvent` sequence (`isTrusted:true`) — not a way to fill date/time-family inputs, whose segmented editors take locale-ordered keys.
 
 All three change record-time fidelity only; replay stays structural. Failure mode: in `fill`/`keystrokes` a selector miss → `kind: "selector_not_found"`; in `value` a selector miss → `kind: "js_throw"`.
 

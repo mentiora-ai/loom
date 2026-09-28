@@ -12,6 +12,7 @@ mod senders_media;
 pub mod shim_manager;
 mod trusted_input;
 mod types;
+pub use locator_js::locator_element_js;
 pub use shim_manager::*;
 
 #[cfg(test)]

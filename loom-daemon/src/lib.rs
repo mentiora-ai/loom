@@ -1167,6 +1167,43 @@ mod tests {
         assert!(!js.contains(r#"querySelector(a"b)"#));
     }
 
+    /// Guest verbs keep a plain CSS selector's payload byte for byte (so the
+    /// action_hash of every recording that already worked is unchanged), and send
+    /// the locator grammar — which used to throw inside querySelector — through
+    /// the shared resolver.
+    #[test]
+    fn guest_element_lookup_keeps_plain_css_and_resolves_locators() {
+        assert_eq!(
+            element_expr("#email").as_deref(),
+            Some(r##"document.querySelector("#email")"##)
+        );
+        assert_eq!(
+            build_scroll_expression(&Some(s(".feed")), 10, 0),
+            r#"(()=>{const el=".feed"?document.querySelector(".feed"):null;const box=(!el||el===document.body||el===document.documentElement)?(document.scrollingElement||document.documentElement):el;box.scrollBy(10,0);return{x:window.scrollX,y:window.scrollY};})()"#,
+            "the pre-change scroll payload, unchanged"
+        );
+        for locator in [
+            "css=#email",
+            r#"role=combobox[name="Size"]"#,
+            "text=Sign in",
+            "frame=#w >> css=#q",
+        ] {
+            let expr = element_expr(locator).unwrap();
+            assert!(
+                !expr.contains(&format!(
+                    "document.querySelector({})",
+                    serde_json::to_string(locator).unwrap()
+                )),
+                "{locator} must not be handed to querySelector raw: {expr}"
+            );
+            assert_eq!(
+                Some(expr),
+                loom_host::shim_manager::locator_element_js(locator),
+                "{locator} resolves through the shared grammar"
+            );
+        }
+    }
+
     /// scroll_result promotion: a valid `{x,y}` value moves into `scroll_result`
     /// and `return_value_json` is cleared (single source of truth — anti-drift).
     #[test]

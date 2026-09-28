@@ -46,6 +46,27 @@ pub(crate) fn serde_json_value_to_cbor(v: serde_json::Value) -> Option<ciborium:
     }
 }
 
+/// The JS expression a guest verb uses to find its target element. A plain CSS
+/// selector keeps the exact `document.querySelector(<json>)` it always had — so the
+/// payload, and the `action_hash` derived from it, is unchanged for every selector
+/// that already worked — while the locator grammar (`css=`, `text=`, `role=`,
+/// `frame=`, ` >> `), which used to throw inside `querySelector`, resolves through
+/// the same grammar and matching as the host-side verbs (`locator_element_js`).
+/// `None` when the selector cannot be encoded or parsed.
+pub(crate) fn element_expr(selector: &str) -> Option<String> {
+    use loom_shared::locator::{parse_locator, Segment};
+    let plain_css = matches!(
+        parse_locator(selector).as_deref(),
+        Ok([Segment::Css(css)]) if css == selector
+    );
+    if plain_css {
+        let sel = serde_json::to_string(selector).ok()?;
+        Some(format!("document.querySelector({sel})"))
+    } else {
+        loom_host::shim_manager::locator_element_js(selector)
+    }
+}
+
 /// Build the JS expression for `web.scroll`. Targets the viewport
 /// (`document.scrollingElement`) when the selector is absent, empty,
 /// non-matching, or refers to `body`/`html`/the document element; otherwise
@@ -63,10 +84,16 @@ pub(crate) fn build_scroll_expression(
     delta_x: i64,
     delta_y: i64,
 ) -> String {
-    // `null` (no selector) or a JSON string literal like `"body"`.
+    // No selector keeps the literal `null?…:null` form; a plain CSS selector keeps
+    // `"<sel>"?document.querySelector("<sel>"):null` byte for byte (element_expr);
+    // a locator resolves through the shared grammar.
     let sel = serde_json::to_string(selector).unwrap_or_else(|_| "null".to_string());
+    let find = selector
+        .as_deref()
+        .and_then(element_expr)
+        .unwrap_or_else(|| "null".to_string());
     format!(
-        "(()=>{{const el={sel}?document.querySelector({sel}):null;\
+        "(()=>{{const el={sel}?{find}:null;\
          const box=(!el||el===document.body||el===document.documentElement)\
          ?(document.scrollingElement||document.documentElement):el;\
          box.scrollBy({delta_x},{delta_y});\
@@ -199,11 +226,11 @@ pub(crate) fn build_chromium_args(action: &Action) -> Option<Vec<u8>> {
             // setter so the framework's tracker fires its change observer.
             // (Same approach Playwright/testing-library use for the same
             // reason.)
-            let sel = serde_json::to_string(selector).ok()?;
+            let find = element_expr(selector)?;
             let val = serde_json::to_string(text).ok()?;
             runtime_evaluate(format!(
                 "(function(){{\
-                  const el=document.querySelector({sel});\
+                  const el={find};\
                   el.focus();\
                   const proto=el.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;\
                   const setter=Object.getOwnPropertyDescriptor(proto,'value').set;\
@@ -219,11 +246,11 @@ pub(crate) fn build_chromium_args(action: &Action) -> Option<Vec<u8>> {
         } => {
             // Same React/Vue/Angular tracker problem as web.type — the
             // native HTMLSelectElement setter is what frameworks observe.
-            let sel = serde_json::to_string(selector).ok()?;
+            let find = element_expr(selector)?;
             let val = serde_json::to_string(value).ok()?;
             runtime_evaluate(format!(
                 "(function(){{\
-                  const el=document.querySelector({sel});\
+                  const el={find};\
                   const setter=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;\
                   setter.call(el,{val});\
                   el.dispatchEvent(new Event('input',{{bubbles:true}}));\
@@ -233,9 +260,9 @@ pub(crate) fn build_chromium_args(action: &Action) -> Option<Vec<u8>> {
         }
 
         Action::WebHover { selector, .. } => {
-            let sel = serde_json::to_string(selector).ok()?;
+            let find = element_expr(selector)?;
             runtime_evaluate(format!(
-                "document.querySelector({sel}).dispatchEvent(\
+                "{find}.dispatchEvent(\
                  new MouseEvent('mouseover',{{bubbles:true,cancelable:true}}))"
             ))
         }

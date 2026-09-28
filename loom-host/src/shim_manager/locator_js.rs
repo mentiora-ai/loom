@@ -7,7 +7,7 @@
 // happens at record time only; replay is structural, so the marker never enters
 // the hash chain.
 
-use loom_shared::locator::Segment;
+use loom_shared::locator::{parse_locator, Segment};
 
 pub(super) const MARKER_ATTR: &str = "data-loom-loc";
 
@@ -67,6 +67,50 @@ fn wrap(body: &str) -> String {
     s.push_str(body);
     s.push_str("})()");
     s
+}
+
+/// A JS EXPRESSION that evaluates to the element `locator` names, or `null` —
+/// the host-side grammar and matching (`css=` / `text=` / `role=`, `frame=`
+/// descending into a same-origin frame's document, ` >> ` composition) for verbs
+/// that resolve their target page-side (the guest `web.type mode:"value"`,
+/// `web.select`, `web.hover`, `web.scroll`). `text=`/`role=` reuse the very
+/// resolver bodies the host path runs, scoped to the current frame's document by
+/// shadowing `document`, and like the host path they must be the LAST segment.
+/// `None` when the locator does not parse.
+pub fn locator_element_js(locator: &str) -> Option<String> {
+    let segments = parse_locator(locator).ok()?;
+    let last = segments.len().checked_sub(1)?;
+    let mut js = String::from("(function(){var doc=document,scope=doc;");
+    for (i, seg) in segments.iter().enumerate() {
+        match seg {
+            Segment::Frame(css) => {
+                let css = serde_json::to_string(css).ok()?;
+                js.push_str(&format!(
+                    "var f=scope.querySelector({css});if(!f||!f.contentDocument)return null;doc=f.contentDocument;scope=doc;"
+                ));
+            }
+            Segment::Css(css) => {
+                let css = serde_json::to_string(css).ok()?;
+                js.push_str(&format!(
+                    "scope=scope.querySelector({css});if(!scope)return null;"
+                ));
+            }
+            Segment::Text(_) | Segment::Role(_) => {
+                if i != last {
+                    return Some("null".to_string());
+                }
+                let iife = marker_resolver_js(seg)?;
+                let body = iife.strip_prefix("(function(){")?.strip_suffix("})()")?;
+                js.push_str(&format!(
+                    "if(!(function(document){{{body}}})(doc))return null;\
+                     var hit=doc.querySelector('{MARKER_SELECTOR}');\
+                     if(hit)hit.removeAttribute('{MARKER_ATTR}');return hit;"
+                ));
+            }
+        }
+    }
+    js.push_str("return scope===doc?null:scope;})()");
+    Some(js)
 }
 
 /// JS resolver expression for a `text=`/`role=` segment, or `None` for others.
@@ -208,6 +252,46 @@ mod tests {
         assert!(
             js.contains("\"continue\""),
             "name lowercased + embedded: {js}"
+        );
+    }
+
+    #[test]
+    fn locator_element_js_descends_frames_and_scopes_css() {
+        let js = locator_element_js("frame=#w >> css=#composer").unwrap();
+        assert!(js.contains(r##"scope.querySelector("#w")"##), "{js}");
+        assert!(js.contains("doc=f.contentDocument"), "{js}");
+        assert!(js.contains(r##"scope.querySelector("#composer")"##), "{js}");
+        assert!(js.ends_with("return scope===doc?null:scope;})()"), "{js}");
+    }
+
+    #[test]
+    fn locator_element_js_runs_the_host_resolver_against_the_current_document() {
+        let js = locator_element_js(r#"role=textbox[name="First day"]"#).unwrap();
+        let host =
+            marker_resolver_js(&Segment::Role(r#"textbox[name="First day"]"#.into())).unwrap();
+        let body = host
+            .strip_prefix("(function(){")
+            .and_then(|b| b.strip_suffix("})()"))
+            .unwrap();
+        assert!(
+            js.contains(&format!("(function(document){{{body}}})(doc)")),
+            "{js}"
+        );
+        assert!(js.contains("hit.removeAttribute('data-loom-loc')"), "{js}");
+    }
+
+    #[test]
+    fn locator_element_js_mirrors_the_host_limits() {
+        // text=/role= only as the last segment (as on the host path).
+        assert_eq!(
+            locator_element_js("text=Go >> css=#b").as_deref(),
+            Some("null")
+        );
+        // A selector with a quote cannot break out of the JS string.
+        let js = locator_element_js(r#"css=input[name="q"]"#).unwrap();
+        assert!(
+            js.contains(r#"scope.querySelector("input[name=\"q\"]")"#),
+            "{js}"
         );
     }
 

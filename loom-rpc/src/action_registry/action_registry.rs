@@ -116,6 +116,13 @@ const LOCATOR_DOC: &str = "Locator for the target element. Plain CSS (Level 3) b
      `frame=` is REQUIRED to cross an origin boundary — a bare locator never reaches into a \
      cross-origin frame (e.g. `frame=iframe[src*=\"widget\"] >> css=#send`).";
 
+/// Shared `selector` doc for the verbs that resolve their target PAGE-side (the
+/// guest verbs): the same grammar, but a page cannot reach into a cross-origin
+/// frame, so `frame=` covers same-origin frames only.
+const GUEST_LOCATOR_DOC: &str = "Locator for the target element: plain CSS, or the web.click grammar — \
+     `css=` / `text=` / `role=` segments and `frame=<css>`, joined by ` >> `. Resolved in the page, so \
+     `frame=` reaches same-origin frames only.";
+
 pub const ACTIONS: &[ActionMeta] = &[
     ActionMeta {
         name: "web.clear_cookies",
@@ -312,9 +319,9 @@ registry; the receipt JSON returned to the caller is NOT scrubbed.",
     },
     ActionMeta {
         name: "web.hover",
-        summary: "Dispatch a mouseover event at a CSS selector.",
+        summary: "Dispatch a mouseover event at an element (CSS or a text=/role=/frame= locator).",
         description: "\
-Resolves a CSS query selector and dispatches a synthetic `mouseover` \
+Resolves the selector in the page and dispatches a synthetic `mouseover` \
 event at the matched element. Useful for triggering hover-state UI \
 (menus, tooltips) before a follow-up `web.click`.\n\n\
 Failure mode: selector miss surfaces as `kind: \"js_throw\"`. The \
@@ -331,7 +338,7 @@ synchronise.",
             ParamMeta {
                 name: "selector",
                 ty: ParamType::String,
-                doc: "CSS query selector for the element to hover.",
+                doc: GUEST_LOCATOR_DOC,
                 required: true,
             },
             DEADLINE_MS_PARAM,
@@ -590,7 +597,7 @@ hash chain (only the settled DOM + content hash are chained).",
 Scrolls by `(delta_x, delta_y)` CSS pixels. With no `selector` (or with \
 `body`/`html`/the document element) it scrolls the viewport via \
 `document.scrollingElement` — so \"scroll the page down\" needs no selector. \
-With a real CSS selector it scrolls that element. Both deltas are optional \
+With a selector (CSS or a locator) it scrolls that element. Both deltas are optional \
 and default to 0; passing only one is fine. Useful for revealing virtualised \
 list rows or triggering scroll-based lazy loading before observing the result.\n\n\
 A selector that matches nothing falls back to scrolling the viewport. The \
@@ -606,7 +613,7 @@ predicate that checks the post-scroll state if needed.",
             ParamMeta {
                 name: "selector",
                 ty: ParamType::String,
-                doc: "CSS query selector for the scrollable element. Optional — omit (or use `body`/`html`) to scroll the page viewport.",
+                doc: "Locator for the scrollable element (plain CSS, or the web.click grammar resolved in the page — `frame=` reaches same-origin frames only). Optional — omit (or use `body`/`html`) to scroll the page viewport.",
                 required: false,
             },
             ParamMeta {
@@ -648,7 +655,7 @@ first.",
             ParamMeta {
                 name: "selector",
                 ty: ParamType::String,
-                doc: "CSS query selector for the `<select>` element.",
+                doc: GUEST_LOCATOR_DOC,
                 required: true,
             },
             ParamMeta {
@@ -942,7 +949,8 @@ replaces before it can be filled → `kind: \"type_failed\"`.\n\n\
 `mode: \"value\"` is the legacy path: set `.value` via `Runtime.evaluate` + \
 synthetic `input`/`change` events (`isTrusted:false`). It updates the DOM \
 value but trust-gating frameworks treat it as not user-entered — kept as a \
-back-compat escape hatch (it takes a bare CSS selector, and writes even a \
+back-compat escape hatch (it resolves the locator in the page, so `frame=` \
+reaches same-origin frames only, and writes even a \
 disabled field or a value the input would normalise). `mode: \"keystrokes\"` \
 dispatches a REAL per-character CDP `Input.dispatchKeyEvent` sequence \
 (`isTrusted:true`) — not a way to fill date/time-family inputs, whose \

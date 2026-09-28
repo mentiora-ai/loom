@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>Loom E2E Locators Fixture</title></head>
+<body>
+<!-- Section 11d: the guest-path verbs (web.select, web.hover, web.scroll,
+     web.type mode:"value") resolve the locator grammar, not just plain CSS. -->
+<label for="size">Size</label>
+<select id="size"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select>
+<label for="nick">Nickname</label><input id="nick" type="text" value="old">
+<button id="hover-target" type="button">Hover me</button>
+<div id="feed" style="height:60px;overflow:auto"><div style="height:600px">feed</div></div>
+<iframe id="frame" srcdoc="<select id='inner-size'><option value='s'>S</option><option value='l'>L</option></select>"></iframe>
+<script>
+window.__hovered = 0;
+document.getElementById('hover-target').addEventListener('mouseover', () => { window.__hovered += 1; });
+</script>
+</body>
+</html>
