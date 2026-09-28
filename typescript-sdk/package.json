@@ -1,6 +1,6 @@
 {
   "name": "@mentiora-ai/loom-sdk",
-  "version": "0.15.5",
+  "version": "0.15.6",
   "description": "TypeScript client library for the loom browser-automation daemon",
   "license": "Apache-2.0",
   "type": "module",

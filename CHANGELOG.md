@@ -6,6 +6,14 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.6] — 2026-09-28 — role= names a control by the label wrapping it
+
+A patch release. `role=` locators now name a form control by a `<label>` that wraps it, as
+Playwright does, not only by `<label for=…>`: `role=textbox[name="Email address"]` resolves
+`<label>Email address <input type="email"></label>`, and a wrapped `<select>` is no longer named
+after its options. New recordings of a guest verb (`select`/`hover`/`scroll`/value-mode `type`)
+with a `role=` locator get a different `action_hash`; replay is unaffected. (#341)
+
 ### Fixed
 
 - **`role=` names a control by the `<label>` wrapping it** — the accessible-name subset read only
