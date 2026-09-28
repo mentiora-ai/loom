@@ -45,7 +45,10 @@ const INPUT_TYPE_ROLES: &[(&str, &str)] = &[
 
 /// W3C-AccName subset: implicit role mapping (`roleOf`, its `<input>` roles from
 /// [`INPUT_TYPE_ROLES`]) + accessible-name computation (`accName`: aria-label →
-/// aria-labelledby → associated label/placeholder → text → title).
+/// aria-labelledby → associated label/placeholder → text → title). A control's
+/// labels are its `labels` — `<label for=…>` AND a `<label>` wrapping it, as in
+/// Playwright — and a wrapping label names it by its own text only (`labelText`
+/// skips the control, so a wrapped `<select>` is not named after its options).
 fn role_helpers_js() -> &'static str {
     static JS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     JS.get_or_init(|| {
@@ -60,7 +63,7 @@ fn role_helpers_js() -> &'static str {
 
 const ROLE_OF_JS: &str = "function roleOf(e){var r=e.getAttribute('role');if(r)return r.trim().toLowerCase();var tag=e.tagName.toLowerCase();if(tag==='button')return 'button';if(tag==='a'&&e.hasAttribute('href'))return 'link';if(tag==='select')return 'combobox';if(tag==='textarea')return 'textbox';if(/^h[1-6]$/.test(tag))return 'heading';if(tag==='input'){var ty=(e.getAttribute('type')||'text').toLowerCase();return Object.prototype.hasOwnProperty.call(INPUT_ROLES,ty)?INPUT_ROLES[ty]:'';}return '';}";
 
-const ACC_NAME_JS: &str = "function accName(e){var al=e.getAttribute('aria-label');if(al&&al.trim())return norm(al);var lb=e.getAttribute('aria-labelledby');if(lb){var txt=lb.split(/\\s+/).map(function(id){var t=document.getElementById(id);return t?t.textContent:'';}).join(' ');if(norm(txt))return norm(txt);}var tag=e.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){if(e.id){try{var lbl=document.querySelector('label[for=\"'+(window.CSS&&CSS.escape?CSS.escape(e.id):e.id)+'\"]');if(lbl&&norm(lbl.textContent))return norm(lbl.textContent);}catch(_e){}}var pl=e.getAttribute('placeholder');if(pl&&pl.trim())return pl.trim();}var tc=norm(e.textContent);if(tc)return tc;var ti=e.getAttribute('title');if(ti&&ti.trim())return ti.trim();return '';}";
+const ACC_NAME_JS: &str = "function labelText(l,e){if(!l.contains(e))return norm(l.textContent);var s='';(function w(n){for(var c=n.firstChild;c;c=c.nextSibling){if(c===e)continue;if(c.nodeType===3)s+=c.nodeValue;else if(c.nodeType===1){if(c.contains(e))w(c);else s+=' '+c.textContent+' ';}}})(l);return norm(s);}function accName(e){var al=e.getAttribute('aria-label');if(al&&al.trim())return norm(al);var lb=e.getAttribute('aria-labelledby');if(lb){var txt=lb.split(/\\s+/).map(function(id){var t=document.getElementById(id);return t?t.textContent:'';}).join(' ');if(norm(txt))return norm(txt);}var tag=e.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){var ls=e.labels,parts=[];if(ls){for(var k=0;k<ls.length;k++){var lt=labelText(ls[k],e);if(lt)parts.push(lt);}}else if(e.id){try{var lbl=document.querySelector('label[for=\"'+(window.CSS&&CSS.escape?CSS.escape(e.id):e.id)+'\"]');if(lbl&&norm(lbl.textContent))parts.push(norm(lbl.textContent));}catch(_e){}}if(parts.length)return parts.join(' ');var pl=e.getAttribute('placeholder');if(pl&&pl.trim())return pl.trim();}var tc=norm(e.textContent);if(tc)return tc;var ti=e.getAttribute('title');if(ti&&ti.trim())return ti.trim();return '';}";
 
 fn wrap(body: &str) -> String {
     let mut s = String::from("(function(){");
@@ -242,6 +245,22 @@ mod tests {
                 && js.contains("bestArea")
                 && js.contains("getBoundingClientRect"),
             "must rank by shortest text then bounding-box area: {js}"
+        );
+    }
+
+    #[test]
+    fn accname_names_a_control_by_a_wrapping_label_without_its_own_text() {
+        // Behaviour is proven in real Chromium (tests/e2e Section 11e); this pins the two
+        // parts a refactor could drop: the control's `labels` (for= AND wrapping), and a
+        // wrapping label's text skipping the control itself (a <select>'s options).
+        let js = role_helpers_js();
+        assert!(
+            js.contains("var ls=e.labels"),
+            "must read the control's labels: {js}"
+        );
+        assert!(
+            js.contains("function labelText(l,e)") && js.contains("if(c===e)continue"),
+            "a wrapping label must name the control by its own text only: {js}"
         );
     }
 

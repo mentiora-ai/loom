@@ -111,8 +111,9 @@ pub(super) const LOCATOR_DOC: &str =
     "Locator for the target element. Plain CSS (Level 3) by default; \
      or a composable locator joined by ` >> ` segments: `css=<selector>`, `text=<visible text>` \
      (case-insensitive substring, first visible match), `role=<role>[name=\"<accessible name>\"]` \
-     (ARIA role + a W3C accessible-name subset; a date/time-family `<input>` is a `textbox`, \
-     as in Playwright; the shortest matching accessible name wins), and `frame=<css>` to descend \
+     (ARIA role + a W3C accessible-name subset; a control is named by its `<label>`, `for=` or \
+     wrapping it; a date/time-family `<input>` is a `textbox`, as in Playwright; the shortest matching \
+     accessible name wins), and `frame=<css>` to descend \
      into an iframe. \
      `frame=` is REQUIRED to cross an origin boundary — a bare locator never reaches into a \
      cross-origin frame (e.g. `frame=iframe[src*=\"widget\"] >> css=#send`).";
