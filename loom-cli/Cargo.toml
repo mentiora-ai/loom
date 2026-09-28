@@ -77,7 +77,7 @@ libc = { workspace = true }
 # Not lockstep-shared with wasmtime's transitive (wasmtime 44 ships 0.246.x);
 # this dev-dep keeps an independent lock entry. Tracked as a follow-up to
 # pin to whatever wasmtime brings transitively for compile-time savings.
-wasmparser = "0.255"
+wasmparser = "0.256"
 # clap_mangen: used only by examples/gen-docs.rs to render `loom.1`
 # and per-subcommand man pages from the clap derive; not in the
 # production binary.
