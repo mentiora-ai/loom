@@ -25,7 +25,7 @@ strings.
                         └──────────────┘
 ```
 
-**Platforms.** macOS arm64/x86_64 and Linux x86_64/arm64. Windows is not supported on v0.15.3.
+**Platforms.** macOS arm64/x86_64 and Linux x86_64/arm64. Windows is not supported on v0.15.4.
 
 ## If you've hit the vibe-coding testing wall
 
@@ -154,7 +154,7 @@ build (~150 MB, one-time) and AOT-compiles the WASM surfaces.
 |-----------|----------|---------|---------|
 | CLI + runtime | Homebrew | `mentiora-ai/loom/loom` | `brew install mentiora-ai/loom/loom` |
 | CLI + runtime | Release installer | — | `curl -fsSL …/loom-cli-installer.sh \| sh` |
-| CLI + runtime | Cargo (from git) | `loom-cli` | `cargo install --git … --tag v0.15.3 loom-cli` |
+| CLI + runtime | Cargo (from git) | `loom-cli` | `cargo install --git … --tag v0.15.4 loom-cli` |
 | CLI + runtime | crates.io | — | **not published** ([why](#why-no-cratesio-package)) — use a method above |
 | TypeScript SDK | npm | [`@mentiora-ai/loom-sdk`](https://www.npmjs.com/package/@mentiora-ai/loom-sdk) | `npm install @mentiora-ai/loom-sdk` |
 | Python SDK | PyPI | `mentiora-loom` | published on the next tagged release ([details](#python)) |
@@ -186,7 +186,7 @@ loom doctor
 ### `cargo install` — any platform with Rust 1.92+
 
 ```bash
-cargo install --git https://github.com/mentiora-ai/loom --tag v0.15.3 loom-cli
+cargo install --git https://github.com/mentiora-ai/loom --tag v0.15.4 loom-cli
 loom postinstall
 loom doctor
 ```
@@ -194,7 +194,7 @@ loom doctor
 `--tag` is required: `loom postinstall` fetches `loom-daemon`, `loom-mcp`, and
 `loom-shim-chromium` from the GitHub Release matching the installed crate
 version, so the tag must point at an existing release. (Substitute the latest
-release version for `v0.15.3`.)
+release version for `v0.15.4`.)
 
 ### Manual download — pre-built tarball
 
@@ -297,7 +297,7 @@ on the next tagged release (the publish workflow is wired but hasn't run
 against a tag yet). Until that lands, install from git:
 
 ```bash
-pip install "git+https://github.com/mentiora-ai/loom@v0.15.3#subdirectory=python-sdk"
+pip install "git+https://github.com/mentiora-ai/loom@v0.15.4#subdirectory=python-sdk"
 ```
 
 Once the next release is out: `pip install mentiora-loom` (the import name
@@ -629,7 +629,7 @@ file, not eleven.
 
 ## Status
 
-loom is **0.15.3** — pre-1.0. The matrix below is the stability
+loom is **0.15.4** — pre-1.0. The matrix below is the stability
 contract: breaking changes to **Stable** rows bump the major version
 when 1.0 ships; **Beta** rows may change without notice.
 

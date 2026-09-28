@@ -6,6 +6,35 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.4] — 2026-09-28 — Dependency & Security Refresh
+
+A patch release with no feature changes: it clears three security advisories and
+folds in the pending dependency bumps. **RUSTSEC-2026-0268** (guest-controlled host
+heap allocation through WASIp3 streams) and **RUSTSEC-2026-0269** (filesystem sandbox
+escape when paths or symlinks contain trailing slashes) are fixed by moving wasmtime +
+wasmtime-wasi from 47.0.3 to **48.0.3** — a major-version engine bump that required no
+code changes and keeps the replay hash chain byte-equal (the full determinism suite
+passes unchanged). **RUSTSEC-2026-0285** (TLS 1.3 handshake messages accepted across
+encryption-level boundaries) is fixed by moving rustls from 0.23.43 to 0.23.45. The
+workspace also moves to wit-bindgen 0.61, jsonschema 0.52, and wasmparser 0.256, plus
+the non-major cargo group and an updated CI action. (#306)
+
+### Fixed
+
+- **cargo-deny advisories** — RUSTSEC-2026-0268 / RUSTSEC-2026-0269 (Wasmtime) cleared
+  via wasmtime + wasmtime-wasi 47.0.3 → 48.0.3; RUSTSEC-2026-0285 (rustls) cleared via
+  rustls 0.23.43 → 0.23.45. The yanked chacha20 0.10.1 is replaced by 0.10.2. (#306)
+
+### Changed
+
+- **Dependency refresh** — wasmtime + wasmtime-wasi 48.0.3, wit-bindgen 0.61,
+  jsonschema 0.52, wasmparser 0.256, and non-major bumps (clap 4.6.7, toml 1.1.6,
+  uuid 1.26.1, flate2 1.1.10, rustix 1.1.5, secret-service 5.2.0). No public API
+  changes. (#306)
+- **CI actions** — taiki-e/install-action v2.86.5. (#306)
+- **Vendored WASM guest** — `loom-cli/vendor/loom_surface_web.wasm` rebuilt against the
+  new dependency set (Linux CI bytes). (#306)
+
 ## [0.15.3] — 2026-08-21 — web.click tolerates a navigation racing the trusted-input commit ack
 
 v0.15.2 (#291) bounded the trusted-input **dispatch** and rescued an ack lost on the
