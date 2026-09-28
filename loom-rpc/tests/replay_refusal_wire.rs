@@ -7,7 +7,7 @@
 //!
 //! The scripted bridge below returns the EXACT `LoomError`s loom-core
 //! emits on each refusal path (codes + message templates are pinned at the
-//! source by loom-core/tests/replay_engine_behavior.rs and
+//! source by loom-core/tests/replay_engine_behavior/refusal.rs and
 //! loom-core/tests/integration.rs; the daemon bridge passes them through
 //! untranslated — see `CoreBridge::replay_session_to_id`). Dispatch goes
 //! through the real `CoreServiceAdapter` → `RpcHandlers` → `RequestRouter`
