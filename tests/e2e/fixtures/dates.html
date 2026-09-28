@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head><title>Loom E2E Dates Fixture</title></head>
+<body>
+<!-- Section 11c: web.type (default fill) on native date/time-family inputs,
+     typed refusals, and fill REPLACING a pre-filled field when the selector
+     uses locator grammar. -->
+<label for="first-day">First day</label><input id="first-day" type="date">
+<label for="last-day">Last day</label><input id="last-day" type="date">
+<label for="opens">Opens at</label><input id="opens" type="time">
+<label for="starts">Starts at</label><input id="starts" type="datetime-local">
+<label for="billing">Billing month</label><input id="billing" type="month">
+<label for="sprint">Sprint week</label><input id="sprint" type="week">
+<label for="accent">Accent colour</label><input id="accent" type="color">
+<label for="volume">Volume</label><input id="volume" type="range">
+<label for="tracked">Tracked day</label><input id="tracked" type="date">
+<label for="tracked-ctl">Control day</label><input id="tracked-ctl" type="date">
+<label for="locked">Locked day</label><input id="locked" type="date" disabled>
+<label for="reference">Reference</label><input id="reference" type="text" value="R-1" readonly>
+<label for="name">Name</label><input id="name" type="text" value="old">
+<textarea id="note">abc</textarea>
+<textarea id="memo">hello</textarea>
+<!-- An SPA that replaces the field when it gains focus: fill must report an
+     error, never a success into a node that is no longer in the document. -->
+<label for="swapper">Swap me</label><input id="swapper" type="text">
+<!-- Shortest accessible name wins among role=textbox candidates: once a date
+     input is a textbox, "Date" (date input) outranks "Date of birth" (text). -->
+<label for="dob">Date of birth</label><input id="dob" type="text">
+<label for="just-date">Date</label><input id="just-date" type="date">
+<script>
+window.__events = [];
+for (const el of document.querySelectorAll('input, textarea')) {
+  el.addEventListener('input', () => window.__events.push(el.id + ':input'));
+  el.addEventListener('change', () => window.__events.push(el.id + ':change'));
+}
+(function () {
+  const el = document.getElementById('swapper');
+  el.addEventListener('focus', () => el.replaceWith(el.cloneNode(true)), { once: true });
+})();
+// A React-style value tracker on #tracked (and #tracked-ctl, the rig's control):
+// React defines a per-INSTANCE `value` property whose setter records the value
+// the framework last saw, and on an
+// `input` event it reports a change only if the DOM value differs from that
+// record. A plain `el.value = v` goes through the instance setter, so the
+// framework never sees a change (and a controlled form submits empty); only the
+// native HTMLInputElement.prototype setter bypasses it.
+window.__trackerChanges = {};
+for (const id of ['tracked', 'tracked-ctl']) {
+  const el = document.getElementById(id);
+  const native = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  let known = native.get.call(el);
+  Object.defineProperty(el, 'value', {
+    configurable: true,
+    get() { return native.get.call(this); },
+    set(v) { known = String(v); native.set.call(this, v); },
+  });
+  window.__trackerChanges[id] = [];
+  el.addEventListener('input', () => {
+    const now = native.get.call(el);
+    if (now !== known) { known = now; window.__trackerChanges[id].push(now); }
+  });
+}
+</script>
+</body>
+</html>

@@ -110,7 +110,9 @@ const DEADLINE_MS_PARAM: ParamMeta = ParamMeta {
 const LOCATOR_DOC: &str = "Locator for the target element. Plain CSS (Level 3) by default; \
      or a composable locator joined by ` >> ` segments: `css=<selector>`, `text=<visible text>` \
      (case-insensitive substring, first visible match), `role=<role>[name=\"<accessible name>\"]` \
-     (ARIA role + a W3C accessible-name subset), and `frame=<css>` to descend into an iframe. \
+     (ARIA role + a W3C accessible-name subset; a date/time-family `<input>` is a `textbox`, \
+     as in Playwright; the shortest matching accessible name wins), and `frame=<css>` to descend \
+     into an iframe. \
      `frame=` is REQUIRED to cross an origin boundary — a bare locator never reaches into a \
      cross-origin frame (e.g. `frame=iframe[src*=\"widget\"] >> css=#send`).";
 
@@ -919,12 +921,27 @@ commits `text` via a single CDP `Input.insertText` — a GENUINE \
 mechanism as Playwright `fill()`. This drives React/Vue/react-hook-form \
 `onChange` AND is treated as user-entered, so trust-gating flows (e.g. Auth0 \
 New Universal Login) advance. `Input.insertText` over the selection means \
-`text: \"\"` clears the field.\n\n\
+`text: \"\"` clears the field. Fill acts on the element the selector \
+RESOLVED to, so a `role=`/`text=`/`css=`/`frame=` locator replaces the \
+field's content exactly like a bare CSS selector.\n\n\
+Chromium ignores `Input.insertText` on date/time-family inputs, so fill sets \
+`<input type=date|time|datetime-local|month|week|color|range>` BY VALUE, the \
+way their native pickers do: the (trimmed) text goes through the native \
+`HTMLInputElement` value setter, is read back, and `input` then `change` fire. \
+The text must be in the input's own value format (`yyyy-mm-dd` for `date`, \
+`hh:mm` for `time`, `yyyy-mm-ddThh:mm` for `datetime-local`, `yyyy-mm`, \
+`yyyy-Www`, lower-case `#rrggbb`, a number the range allows); a value the \
+input rejects or normalises → `kind: \"malformed_value\"` (the browser leaves \
+the field empty). In `fill`, a disabled or readonly target → \
+`kind: \"not_editable\"`, and nothing is written.\n\n\
 `mode: \"value\"` is the legacy path: set `.value` via `Runtime.evaluate` + \
 synthetic `input`/`change` events (`isTrusted:false`). It updates the DOM \
 value but trust-gating frameworks treat it as not user-entered — kept as a \
-back-compat escape hatch. `mode: \"keystrokes\"` dispatches a REAL \
-per-character CDP `Input.dispatchKeyEvent` sequence (`isTrusted:true`).\n\n\
+back-compat escape hatch (it takes a bare CSS selector, and writes even a \
+disabled field or a value the input would normalise). `mode: \"keystrokes\"` \
+dispatches a REAL per-character CDP `Input.dispatchKeyEvent` sequence \
+(`isTrusted:true`) — not a way to fill date/time-family inputs, whose \
+segmented editors take locale-ordered keys.\n\n\
 All three change record-time fidelity only; replay stays structural. \
 Failure mode: in `fill`/`keystrokes` a selector miss → \
 `kind: \"selector_not_found\"`; in `value` a selector miss → \
@@ -957,7 +974,7 @@ SPA never surfaces a transport `rpc timeout`. Control it with `until` \
             ParamMeta {
                 name: "mode",
                 ty: ParamType::String,
-                doc: "Dispatch mode: \"fill\" (default — focus + CDP Input.insertText, Playwright fill() semantics: a genuine isTrusted edit that drives React/react-hook-form onChange and clears on empty text), \"value\" (legacy — .value via Runtime.evaluate + synthetic events, isTrusted:false; the back-compat escape hatch), or \"keystrokes\" (real per-character CDP Input.dispatchKeyEvent, isTrusted:true). An unrecognized mode behaves as \"value\".",
+                doc: "Dispatch mode: \"fill\" (default — focus + CDP Input.insertText, Playwright fill() semantics: a genuine isTrusted edit that drives React/react-hook-form onChange and clears on empty text; date/time-family inputs are set by value), \"value\" (legacy — .value via Runtime.evaluate + synthetic events, isTrusted:false; the back-compat escape hatch), or \"keystrokes\" (real per-character CDP Input.dispatchKeyEvent, isTrusted:true). An unrecognized mode behaves as \"value\".",
                 required: false,
             },
             ParamMeta {
@@ -968,7 +985,7 @@ SPA never surfaces a transport `rpc timeout`. Control it with `until` \
             },
             DEADLINE_MS_PARAM,
         ],
-        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
+        returns: "Receipt with `status: \"ok\"` and (for `fill`/`keystrokes`) `settle_outcome` (`reached`|`timeout`|`dom_unstable`) from the bounded post-action readiness wait. A selector miss in `fill`/`keystrokes` → `kind: \"selector_not_found\"`; in `value` → `kind: \"js_throw\"`. In `fill`: a value a date/time-family input rejects → `kind: \"malformed_value\"`; a disabled/readonly target → `kind: \"not_editable\"`; an element detached before it could be filled, or an unacknowledged prepare step → `kind: \"type_failed\"`. The `outcome_hash` is a per-verb DISPATCH-SUCCESS marker (CONSTANT per verb), NOT a page-state fingerprint; the `settle_outcome` and settle diagnostics ride observationally and are EXCLUDED from the replay hash chain. Under `--capture-policy fingerprint` the receipt also carries `dom_after_hash`: `sha256` of the normalized post-action DOM — content-bearing and in the manifest hash chain.",
         example: &["loom", "action", "web.type", "--session", "<SESSION>", "--selector", "#email", "--text", "user@example.com"],
     },
     ActionMeta {

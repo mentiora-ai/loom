@@ -12,8 +12,9 @@
 
 use super::helpers::{cbor_get, cbor_u64, map_shim_code, parse_evaluate_payload, shim_error_class};
 use super::input_dispatch::{
-    dispatch_frame_step, fill_events, keystroke_events_for_text, mouse_event, press_key_events,
-    FrameAck, FrameStep,
+    dispatch_frame_step, fill_prepare_message, insert_text_event, keystroke_events_for_text,
+    mouse_event, parse_fill_prepare, press_key_events, release_fill_objects_message,
+    resolve_node_message, FillPrep, FillPrepFailure, FrameAck, FrameStep,
 };
 use super::process::{send_and_await, send_and_await_dispatch, DispatchAck};
 use super::shim_manager::ShimManager;
@@ -58,6 +59,11 @@ const MAX_WAIT_TIMEOUT_MS: u64 = 600_000;
 /// awaited before the next sleep), so this is a floor on the gap between probes,
 /// not a concurrent fan-out — it keeps the renderer/transport load modest.
 const WAIT_POLL_INTERVAL_MS: u64 = 100;
+/// Numbers each `web.type` fill's CDP object group, so releasing one fill's
+/// remote objects can never free another in-flight fill's.
+static FILL_OBJECT_GROUP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+/// Ceiling on waiting for the best-effort release of a fill's object group.
+const FILL_RELEASE_BUDGET_MS: u64 = 1_000;
 
 impl ShimManager {
     /// Send a typed PageNavigate request and decode the response as
@@ -1061,9 +1067,11 @@ impl ShimManager {
         }
     }
 
-    /// Resolve `selector` to a node and focus it. `Ok(true)` focused; `Ok(false)`
-    /// selector matched nothing; `Err` on transport failure. Focus itself is
-    /// best-effort (a non-focusable node still receives dispatched key events).
+    /// Resolve `selector` to a node and focus it. `Ok(Some(nodeId))` focused;
+    /// `Ok(None)` selector matched nothing; `Err` on transport failure. Focus
+    /// itself is best-effort (a non-focusable node still receives dispatched key
+    /// events). The nodeId is only valid until the next `DOM.getDocument`, so a
+    /// caller acts on it straight away.
     async fn resolve_and_focus(
         &self,
         id: &ShimId,
@@ -1071,7 +1079,7 @@ impl ShimManager {
         target_id: u64,
         selector: &str,
         budget_ms: u64,
-    ) -> Result<bool, LoomError> {
+    ) -> Result<Option<u64>, LoomError> {
         use ciborium::value::{Integer, Value};
         // Frame-aware resolution (descends same-process cross-origin iframes);
         // for a bare/plain CSS selector this is the same getDocument →
@@ -1081,7 +1089,7 @@ impl ShimManager {
             .await?
         {
             Some(n) => n,
-            None => return Ok(false),
+            None => return Ok(None),
         };
         // Best-effort focus — ignore a CDP error (non-focusable element).
         // `Input.insertText`/`dispatchKeyEvent` then target the focused element,
@@ -1101,7 +1109,7 @@ impl ShimManager {
                 budget_ms,
             )
             .await?;
-        Ok(true)
+        Ok(Some(node))
     }
 
     /// One trusted-INPUT CDP round-trip whose ack may be lost to a cross-origin
@@ -1274,10 +1282,11 @@ impl ShimManager {
         budget_ms: u64,
     ) -> Result<InputDispatchOutcome, LoomError> {
         self.check_breaker(&id)?;
-        if !self
+        if self
             .resolve_and_focus(&id, session_id, target_id, &selector, budget_ms)
             .await
             .inspect_err(|_| self.record_failure(&id, FailureClass::Transport))?
+            .is_none()
         {
             self.record_success(&id);
             return Ok(InputDispatchOutcome::SelectorNotFound);
@@ -1304,12 +1313,16 @@ impl ShimManager {
         }
     }
 
-    /// `web.type` DEFAULT (`mode:"fill"`) — focus `selector`, then drive the value
-    /// through CDP `Input.insertText` (Playwright `fill()` semantics): select the
-    /// existing content and commit `text` as one GENUINE (`isTrusted:true`) edit so
-    /// React/react-hook-form `onChange` fires AND the value is treated as
-    /// user-entered. Same selector-resolution + breaker bookkeeping as
-    /// `send_type_keystrokes`; differs only in the dispatched frames.
+    /// `web.type` DEFAULT (`mode:"fill"`) — Playwright `fill()` semantics, on the
+    /// node `selector` RESOLVED to (never a re-query of the raw locator, which
+    /// `document.querySelector` cannot parse for `role=`/`text=`/`css=`/`frame=`):
+    /// focus it, then [`prepare_fill_target`](Self::prepare_fill_target) either
+    /// sets a date/time-family input by value (Chromium ignores `Input.insertText`
+    /// on those) or selects the existing content, which the one GENUINE
+    /// (`isTrusted:true`) `Input.insertText` then replaces — so React /
+    /// react-hook-form `onChange` fires and the value is treated as user-entered.
+    /// A disabled/readonly target or a value the input rejects is a typed outcome,
+    /// never a success with the field unchanged.
     pub async fn send_type_fill(
         &self,
         id: ShimId,
@@ -1320,34 +1333,124 @@ impl ShimManager {
         budget_ms: u64,
     ) -> Result<InputDispatchOutcome, LoomError> {
         self.check_breaker(&id)?;
-        if !self
+        let Some(node_id) = self
             .resolve_and_focus(&id, session_id, target_id, &selector, budget_ms)
             .await
             .inspect_err(|_| self.record_failure(&id, FailureClass::Transport))?
-        {
+        else {
             self.record_success(&id);
             return Ok(InputDispatchOutcome::SelectorNotFound);
-        }
-        match self
-            .dispatch_input_events(
-                &id,
-                session_id,
-                target_id,
-                fill_events(&selector, &text),
-                budget_ms,
-                0,
-            )
+        };
+        let outcome = match self
+            .prepare_fill_target(&id, session_id, target_id, node_id, &text, budget_ms)
             .await
         {
-            Ok(ack) => {
-                self.record_success(&id);
-                Ok(ack.into_outcome())
+            Ok(FillPrep::ValueSet) => Ok(InputDispatchOutcome::Ok),
+            Ok(FillPrep::Malformed(input_type)) => {
+                Ok(InputDispatchOutcome::MalformedValue(input_type))
             }
-            Err(e) => {
-                self.record_failure(&id, FailureClass::Application);
-                Err(e)
-            }
+            Ok(FillPrep::NotEditable) => Ok(InputDispatchOutcome::NotEditable),
+            Ok(FillPrep::Insert) => self
+                .dispatch_input_events(
+                    &id,
+                    session_id,
+                    target_id,
+                    vec![insert_text_event(&text)],
+                    budget_ms,
+                    0,
+                )
+                .await
+                .map(InputAck::into_outcome),
+            Err(e) => Err(e),
+        };
+        match &outcome {
+            Ok(_) => self.record_success(&id),
+            Err(_) => self.record_failure(&id, FailureClass::Application),
         }
+        outcome
+    }
+
+    /// Run [`fill_prepare_fn`] on the resolved node: `DOM.resolveNode` →
+    /// `Runtime.callFunctionOn` (the typed text travels as its argument) →
+    /// `Runtime.releaseObjectGroup`. Every round-trip is bounded by the action's
+    /// budget (`cdp_send_dispatch`). A lost ack before the verdict arrives is an
+    /// error, not a dispatched input: the insert path has not typed anything yet
+    /// and a set-value input may or may not have taken the value. The release is
+    /// best-effort — its failure never changes a fill that already committed.
+    async fn prepare_fill_target(
+        &self,
+        id: &ShimId,
+        session_id: u64,
+        target_id: u64,
+        node_id: u64,
+        text: &str,
+        budget_ms: u64,
+    ) -> Result<FillPrep, LoomError> {
+        let group = format!(
+            "loom-fill-{}",
+            FILL_OBJECT_GROUP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        let fill_error = |failure: FillPrepFailure| {
+            let code = match failure {
+                FillPrepFailure::Unacknowledged => LoomErrorCode::ShimTimeout,
+                _ => LoomErrorCode::ShimFailure,
+            };
+            LoomError::new(code, format!("shim {}: {}", id.0, failure.message()))
+        };
+        let cdp_error = |step: &str, code: ShimErrorCode, detail: String| {
+            LoomError::new(
+                map_shim_code(code),
+                format!("shim {}: {step}: {detail}", id.0),
+            )
+        };
+        let resolved = self
+            .cdp_send_dispatch(
+                id,
+                session_id,
+                target_id,
+                resolve_node_message(node_id, &group),
+                budget_ms,
+            )
+            .await?
+            .ok_or_else(|| fill_error(FillPrepFailure::Unacknowledged))?
+            .map_err(|(code, detail)| cdp_error("DOM.resolveNode", code, detail))?;
+        let object_id = match cbor_get(&resolved, "object").and_then(|o| cbor_get(o, "objectId")) {
+            Some(ciborium::value::Value::Text(object_id)) => object_id.clone(),
+            _ => return Err(fill_error(FillPrepFailure::NoObjectId)),
+        };
+        let verdict = self
+            .cdp_send_dispatch(
+                id,
+                session_id,
+                target_id,
+                fill_prepare_message(&object_id, text),
+                budget_ms,
+            )
+            .await;
+        let _ = self
+            .cdp_send_dispatch(
+                id,
+                session_id,
+                target_id,
+                release_fill_objects_message(&group),
+                // `0` means "no deadline" (→ the 30 s floor); the release never waits that long.
+                if budget_ms == 0 {
+                    FILL_RELEASE_BUDGET_MS
+                } else {
+                    budget_ms.min(FILL_RELEASE_BUDGET_MS)
+                },
+            )
+            .await;
+
+        let payload = verdict?
+            .ok_or_else(|| fill_error(FillPrepFailure::Unacknowledged))?
+            .map_err(|(code, detail)| cdp_error("Runtime.callFunctionOn", code, detail))?;
+        parse_fill_prepare(&payload).map_err(|failure| {
+            // Only THAT something page-side went wrong is logged — never the page's
+            // own text, which can echo the typed value.
+            tracing::debug!(shim = %id.0, ?failure, "web.type fill prepare failed");
+            fill_error(failure)
+        })
     }
 
     /// `web.press_key` — optionally focus `selector`, then dispatch a named key
@@ -1368,10 +1471,11 @@ impl ShimManager {
         } = params;
         self.check_breaker(&id)?;
         if let Some(sel) = &selector {
-            if !self
+            if self
                 .resolve_and_focus(&id, session_id, target_id, sel, budget_ms)
                 .await
                 .inspect_err(|_| self.record_failure(&id, FailureClass::Transport))?
+                .is_none()
             {
                 self.record_success(&id);
                 return Ok(InputDispatchOutcome::SelectorNotFound);
@@ -1855,9 +1959,50 @@ const MARKER_SELECTOR: &str = "[data-loom-loc]";
 /// display:none/visibility:hidden) and `norm()` (collapse whitespace + trim).
 const JS_PRELUDE: &str = "var M='data-loom-loc';document.querySelectorAll('['+M+']').forEach(function(e){e.removeAttribute(M);});function vis(e){var r=e.getBoundingClientRect();if(r.width===0&&r.height===0)return false;var s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden';}function norm(t){return (t||'').replace(/\\s+/g,' ').trim();}";
 
-/// W3C-AccName subset: implicit role mapping + accessible-name computation
-/// (aria-label → aria-labelledby → associated label/placeholder → text → title).
-const ROLE_HELPERS: &str = "function roleOf(e){var r=e.getAttribute('role');if(r)return r.trim().toLowerCase();var tag=e.tagName.toLowerCase();if(tag==='button')return 'button';if(tag==='a'&&e.hasAttribute('href'))return 'link';if(tag==='select')return 'combobox';if(tag==='textarea')return 'textbox';if(/^h[1-6]$/.test(tag))return 'heading';if(tag==='input'){var ty=(e.getAttribute('type')||'text').toLowerCase();if(['text','email','password','search','tel','url',''].indexOf(ty)!==-1)return 'textbox';if(ty==='checkbox')return 'checkbox';if(ty==='radio')return 'radio';if(ty==='button'||ty==='submit'||ty==='reset')return 'button';}return '';}function accName(e){var al=e.getAttribute('aria-label');if(al&&al.trim())return norm(al);var lb=e.getAttribute('aria-labelledby');if(lb){var txt=lb.split(/\\s+/).map(function(id){var t=document.getElementById(id);return t?t.textContent:'';}).join(' ');if(norm(txt))return norm(txt);}var tag=e.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){if(e.id){try{var lbl=document.querySelector('label[for=\"'+(window.CSS&&CSS.escape?CSS.escape(e.id):e.id)+'\"]');if(lbl&&norm(lbl.textContent))return norm(lbl.textContent);}catch(_e){}}var pl=e.getAttribute('placeholder');if(pl&&pl.trim())return pl.trim();}var tc=norm(e.textContent);if(tc)return tc;var ti=e.getAttribute('title');if(ti&&ti.trim())return ti.trim();return '';}";
+/// `<input type=…>` → the implicit ARIA role `role=` matches it by (a subset of
+/// Playwright's table; a type absent here has no role). The date/time family is
+/// a `textbox` — Playwright's role for them — so `role=textbox[name="First day"]`
+/// finds a native `<input type="date">`. number/range/file/image deliberately
+/// stay role-less: giving file/image `button` would let a styled-away upload
+/// input win a `role=button` selector (the resolver keeps the shortest name).
+const INPUT_TYPE_ROLES: &[(&str, &str)] = &[
+    ("text", "textbox"),
+    ("email", "textbox"),
+    ("password", "textbox"),
+    ("search", "textbox"),
+    ("tel", "textbox"),
+    ("url", "textbox"),
+    ("date", "textbox"),
+    ("datetime-local", "textbox"),
+    ("month", "textbox"),
+    ("time", "textbox"),
+    ("week", "textbox"),
+    ("color", "textbox"),
+    ("checkbox", "checkbox"),
+    ("radio", "radio"),
+    ("button", "button"),
+    ("submit", "button"),
+    ("reset", "button"),
+];
+
+/// W3C-AccName subset: implicit role mapping (`roleOf`, its `<input>` roles from
+/// [`INPUT_TYPE_ROLES`]) + accessible-name computation (`accName`: aria-label →
+/// aria-labelledby → associated label/placeholder → text → title).
+fn role_helpers_js() -> &'static str {
+    static JS: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    JS.get_or_init(|| {
+        let input_roles: serde_json::Map<String, serde_json::Value> = INPUT_TYPE_ROLES
+            .iter()
+            .map(|(ty, role)| ((*ty).to_string(), serde_json::Value::from(*role)))
+            .collect();
+        let input_roles = serde_json::Value::Object(input_roles).to_string();
+        format!("var INPUT_ROLES={input_roles};{ROLE_OF_JS}{ACC_NAME_JS}")
+    })
+}
+
+const ROLE_OF_JS: &str = "function roleOf(e){var r=e.getAttribute('role');if(r)return r.trim().toLowerCase();var tag=e.tagName.toLowerCase();if(tag==='button')return 'button';if(tag==='a'&&e.hasAttribute('href'))return 'link';if(tag==='select')return 'combobox';if(tag==='textarea')return 'textbox';if(/^h[1-6]$/.test(tag))return 'heading';if(tag==='input'){var ty=(e.getAttribute('type')||'text').toLowerCase();return Object.prototype.hasOwnProperty.call(INPUT_ROLES,ty)?INPUT_ROLES[ty]:'';}return '';}";
+
+const ACC_NAME_JS: &str = "function accName(e){var al=e.getAttribute('aria-label');if(al&&al.trim())return norm(al);var lb=e.getAttribute('aria-labelledby');if(lb){var txt=lb.split(/\\s+/).map(function(id){var t=document.getElementById(id);return t?t.textContent:'';}).join(' ');if(norm(txt))return norm(txt);}var tag=e.tagName.toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select'){if(e.id){try{var lbl=document.querySelector('label[for=\"'+(window.CSS&&CSS.escape?CSS.escape(e.id):e.id)+'\"]');if(lbl&&norm(lbl.textContent))return norm(lbl.textContent);}catch(_e){}}var pl=e.getAttribute('placeholder');if(pl&&pl.trim())return pl.trim();}var tc=norm(e.textContent);if(tc)return tc;var ti=e.getAttribute('title');if(ti&&ti.trim())return ti.trim();return '';}";
 
 fn wrap(body: &str) -> String {
     let mut s = String::from("(function(){");
@@ -1911,7 +2056,7 @@ fn role_resolver_js(role: &str, name: Option<&str>) -> String {
         None => "null".into(),
     };
     let mut body = String::from(JS_PRELUDE);
-    body.push_str(ROLE_HELPERS);
+    body.push_str(role_helpers_js());
     body.push_str("var wantRole=");
     body.push_str(&role_j);
     body.push_str(";var wantName=");
@@ -2036,6 +2181,51 @@ mod locator_resolver_tests {
             js.contains("\"continue\""),
             "name lowercased + embedded: {js}"
         );
+    }
+
+    fn input_role(input_type: &str) -> Option<&'static str> {
+        INPUT_TYPE_ROLES
+            .iter()
+            .find(|(ty, _)| *ty == input_type)
+            .map(|(_, role)| *role)
+    }
+
+    #[test]
+    fn date_family_inputs_are_textboxes() {
+        for ty in ["date", "datetime-local", "month", "time", "week", "color"] {
+            assert_eq!(input_role(ty), Some("textbox"), "{ty}");
+        }
+    }
+
+    #[test]
+    fn input_roles_are_otherwise_unchanged() {
+        for ty in ["text", "email", "password", "search", "tel", "url"] {
+            assert_eq!(input_role(ty), Some("textbox"), "{ty}");
+        }
+        assert_eq!(input_role("checkbox"), Some("checkbox"));
+        assert_eq!(input_role("radio"), Some("radio"));
+        for ty in ["button", "submit", "reset"] {
+            assert_eq!(input_role(ty), Some("button"), "{ty}");
+        }
+        // Deliberately role-less: a file/image input as `button` could win a
+        // `role=button` selector over the visible control.
+        for ty in ["number", "range", "file", "image", "hidden"] {
+            assert_eq!(input_role(ty), None, "{ty}");
+        }
+    }
+
+    #[test]
+    fn role_helpers_embed_the_whole_input_role_table() {
+        let js = role_helpers_js();
+        let start = js.find("var INPUT_ROLES=").expect("table declared") + "var INPUT_ROLES=".len();
+        let end = start + js[start..].find(';').expect("table terminated");
+        let table: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&js[start..end]).expect("table is JSON");
+        assert_eq!(table.len(), INPUT_TYPE_ROLES.len());
+        for (ty, role) in INPUT_TYPE_ROLES {
+            assert_eq!(table.get(*ty).and_then(|r| r.as_str()), Some(*role), "{ty}");
+        }
+        assert!(js.contains("function roleOf") && js.contains("function accName"));
     }
 
     use std::cell::Cell;

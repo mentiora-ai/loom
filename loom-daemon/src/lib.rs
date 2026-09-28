@@ -1278,6 +1278,55 @@ mod tests {
         );
     }
 
+    /// `web.type` fill refusals are typed errors with FIXED messages: the typed
+    /// text (F7 — it can be a password) never appears, and nothing is hashed as a
+    /// dispatched outcome.
+    #[test]
+    fn fill_refusals_are_typed_errors_without_the_typed_text() {
+        use crate::wire_receipts::build_input_dispatch_receipt;
+        use loom_host::shim_manager::{InputDispatchOutcome, SetValueType};
+        use loom_rpc::host_service_adapter::host_service_adapter::ReceiptStatus;
+        let action = Action::WebType {
+            session_id: s("sess"),
+            selector: s("role=textbox[name=\"First day\"]"),
+            text: s("12/31/2036-secret"),
+            mode: None,
+            until: None,
+        };
+        let cases = [
+            (
+                InputDispatchOutcome::MalformedValue(SetValueType::Date),
+                "malformed_value",
+                "yyyy-mm-dd",
+            ),
+            (
+                InputDispatchOutcome::NotEditable,
+                "not_editable",
+                "disabled or readonly",
+            ),
+        ];
+        for (outcome, kind, says) in cases {
+            let r = build_input_dispatch_receipt(1, "sess", &action, outcome);
+            assert!(matches!(r.status, ReceiptStatus::Error), "{kind}");
+            let err = r.error.as_ref().expect("an error receipt");
+            assert_eq!(err.kind, kind);
+            let message = err.detail.as_ref().unwrap()["message"]
+                .as_str()
+                .unwrap()
+                .to_string();
+            assert!(message.contains(says), "{kind}: {message}");
+            assert!(
+                !message.contains("secret"),
+                "{kind} must not echo the typed text"
+            );
+            assert_eq!(r.outcome_hash, None, "{kind} is not a dispatched input");
+            assert!(
+                r.action_hash.is_some(),
+                "{kind} still carries the action_hash"
+            );
+        }
+    }
+
     /// The trusted-input DISPATCH budget is bounded inside the effective deadline
     /// AND stays above real CDP ack latency (tens of ms). The load-bearing
     /// regression guard: a common tight deadline (1–3s) must NOT collapse the

@@ -155,6 +155,9 @@ pub enum SetInputFilesOutcome {
 ///   (same constant `outcome_hash` marker, replay-equal) and proceeds to the
 ///   bounded post-action settle, rather than surfacing a transport error.
 ///   Distinct from `Err(LoomError)`, which means the frame never left the host.
+/// - `MalformedValue` — `web.type` fill set a date/time-family input by value
+///   and the input rejected or normalised it (the read-back differs).
+/// - `NotEditable` — `web.type` fill targeted a disabled or readonly field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputDispatchOutcome {
     Ok,
@@ -162,6 +165,75 @@ pub enum InputDispatchOutcome {
     NotHittable,
     UnknownKey,
     DispatchedAckPending,
+    MalformedValue(SetValueType),
+    NotEditable,
+}
+
+/// An `<input>` type that `web.type` fill sets by VALUE (native setter +
+/// `input`/`change`) rather than by `Input.insertText`, which Chromium ignores on
+/// these controls — Playwright `fill()`'s set-value set. Parsed from the page's
+/// own report of the input type, so it is a closed set: a page cannot smuggle an
+/// arbitrary string into a receipt through it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetValueType {
+    Color,
+    Date,
+    DatetimeLocal,
+    Month,
+    Range,
+    Time,
+    Week,
+}
+
+impl SetValueType {
+    pub const ALL: [Self; 7] = [
+        Self::Color,
+        Self::Date,
+        Self::DatetimeLocal,
+        Self::Month,
+        Self::Range,
+        Self::Time,
+        Self::Week,
+    ];
+
+    pub fn parse(input_type: &str) -> Option<Self> {
+        Some(match input_type {
+            "color" => Self::Color,
+            "date" => Self::Date,
+            "datetime-local" => Self::DatetimeLocal,
+            "month" => Self::Month,
+            "range" => Self::Range,
+            "time" => Self::Time,
+            "week" => Self::Week,
+            _ => return None,
+        })
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Color => "color",
+            Self::Date => "date",
+            Self::DatetimeLocal => "datetime-local",
+            Self::Month => "month",
+            Self::Range => "range",
+            Self::Time => "time",
+            Self::Week => "week",
+        }
+    }
+
+    /// The value format the input keeps verbatim (anything else is rejected or
+    /// normalised by the browser, and so reads back different).
+    pub fn expected_format(self) -> &'static str {
+        match self {
+            Self::Color => "#rrggbb in lower case",
+            Self::Date => "yyyy-mm-dd",
+            Self::DatetimeLocal => "yyyy-mm-ddThh:mm (seconds only when non-zero)",
+            Self::Month => "yyyy-mm",
+            Self::Range => "a number the input's min/max/step allow",
+            Self::Time => "hh:mm, 24-hour (seconds only when non-zero)",
+            Self::Week => "yyyy-Www",
+        }
+    }
 }
 
 /// Outcome of a `web.wait` locator poll (`send_wait`). An application outcome the

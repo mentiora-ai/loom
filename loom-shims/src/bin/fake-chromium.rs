@@ -22,7 +22,16 @@
 //!   tiny DOM model used to answer `DOM.querySelector`, `DOM.getBoxModel`,
 //!   `DOM.scrollIntoViewIfNeeded`, and `Page.getLayoutMetrics`. Shape:
 //!   `{ "boxes": { "<selector>": [x1, y1, x2, y2] }, "viewport": [w, h] }`.
-//!   Used by the Click/Hover/Scroll hit-test integration tests.
+//!   Used by the Click/Hover/Scroll hit-test integration tests. Optional
+//!   `"inputs": { "<selector>": "<fill verdict>" }` scripts `web.type` fill's
+//!   prepare step for a selector that also has a box: `DOM.resolveNode` hands
+//!   out a `fake-node:<nodeId>` object and node-scoped `Runtime.callFunctionOn`
+//!   answers the verdict — `set`, `insert` (the default), `not_editable`,
+//!   `detached`, `malformed:<input type>`, `throw` (a page exception), `garbage`
+//!   (an unknown verdict), `no_object` / `resolve_error` (`DOM.resolveNode`
+//!   returns no objectId / a CDP error), or `swallow_resolve` / `swallow_call`
+//!   (that message is never answered — a lost ack). `"release_error": true` makes
+//!   `Runtime.releaseObjectGroup` fail.
 //! - `LOOM_FAKE_CHROMIUM_SCRIPT` — path to a JSON file driving the
 //!   settle-capture readiness probe deterministically across ticks. Shape:
 //!   `{ "settle_probe": [[ready_complete, "href", dom_mutations], ...],
@@ -296,6 +305,13 @@ async fn handle_connection(
         // surviving "input dispatch ack timeout before commit" arm that
         // `swallow_dispatch_ack` (commit-frame only) cannot reach.
         if settle_script().swallow_dispatch_ack_from_move && method == "Input.dispatchMouseEvent" {
+            continue;
+        }
+
+        // web.type fill prepare step losing its ack (fixture `inputs` verdicts
+        // `swallow_resolve` / `swallow_call`): the host must bound the wait by its
+        // budget and report an error — never a success, never the 30 s recv floor.
+        if fill_prepare_ack_swallowed(&method, &params) {
             continue;
         }
 
@@ -1713,6 +1729,63 @@ fn canned_response(method: &str, params: &Value) -> Value {
             json!({ "nodeId": node_id })
         }
         "DOM.scrollIntoViewIfNeeded" => json!({}),
+        // web.type fill prepare step (fixture `inputs`): resolveNode → a
+        // `fake-node:<nodeId>` handle; callFunctionOn on it → the scripted verdict.
+        "DOM.resolveNode" => {
+            let node_id = params.get("nodeId").and_then(|n| n.as_u64()).unwrap_or(0);
+            match dom_fixture().selectors_by_id.get(&node_id) {
+                None => json!({
+                    "__cdp_error__": { "code": -32000, "message": "No node with given id found" }
+                }),
+                Some(sel) => match dom_fixture().inputs.get(sel).map(String::as_str) {
+                    Some("resolve_error") => json!({
+                        "__cdp_error__": { "code": -32000, "message": "Node is not resolvable" }
+                    }),
+                    Some("no_object") => json!({ "object": { "type": "undefined" } }),
+                    _ => json!({
+                        "object": {
+                            "type": "object",
+                            "subtype": "node",
+                            "objectId": format!("fake-node:{node_id}"),
+                        }
+                    }),
+                },
+            }
+        }
+        "Runtime.callFunctionOn" => {
+            let node_id = params
+                .get("objectId")
+                .and_then(|o| o.as_str())
+                .and_then(|o| o.strip_prefix("fake-node:"))
+                .and_then(|n| n.parse::<u64>().ok());
+            let verdict = node_id
+                .and_then(|n| dom_fixture().selectors_by_id.get(&n))
+                .and_then(|sel| dom_fixture().inputs.get(sel))
+                .map(String::as_str)
+                .unwrap_or("insert");
+            let by_value = |value: Value| json!({ "result": { "type": "object", "value": value } });
+            match verdict {
+                "throw" => json!({
+                    "result": { "type": "object", "subtype": "error" },
+                    "exceptionDetails": {
+                        "text": "Uncaught",
+                        "exception": { "description": "Error: fake page exception" }
+                    }
+                }),
+                "garbage" => by_value(json!({ "v": "sideways" })),
+                other => match other.strip_prefix("malformed:") {
+                    Some(input_type) => by_value(json!({ "v": "malformed", "type": input_type })),
+                    None => by_value(json!({ "v": other })),
+                },
+            }
+        }
+        "Runtime.releaseObjectGroup" => {
+            if dom_fixture().release_error {
+                json!({ "__cdp_error__": { "code": -32000, "message": "fake release failure" } })
+            } else {
+                json!({})
+            }
+        }
         // cdp-trusted-input: focus + real CDP input dispatch. The fake doesn't
         // model keyboard/mouse state — it just acks (empty success), which is
         // enough to assert the host issues the right CDP envelopes and records
@@ -2014,6 +2087,31 @@ fn load_settle_script() -> SettleScript {
     }
 }
 
+/// True when the fixture scripts this fill prepare message's ack to be lost:
+/// `DOM.resolveNode` for a node whose verdict is `swallow_resolve`, or
+/// `Runtime.callFunctionOn` on the `fake-node:` handle of a `swallow_call` node.
+fn fill_prepare_ack_swallowed(method: &str, params: &Value) -> bool {
+    let (node_id, wanted) = match method {
+        "DOM.resolveNode" => (
+            params.get("nodeId").and_then(|n| n.as_u64()),
+            "swallow_resolve",
+        ),
+        "Runtime.callFunctionOn" => (
+            params
+                .get("objectId")
+                .and_then(|o| o.as_str())
+                .and_then(|o| o.strip_prefix("fake-node:"))
+                .and_then(|n| n.parse::<u64>().ok()),
+            "swallow_call",
+        ),
+        _ => return false,
+    };
+    node_id
+        .and_then(|n| dom_fixture().selectors_by_id.get(&n))
+        .and_then(|sel| dom_fixture().inputs.get(sel))
+        .is_some_and(|verdict| verdict == wanted)
+}
+
 /// Tiny DOM model used by the hit-test integration tests. Read once from
 /// `LOOM_FAKE_CHROMIUM_FIXTURE` (a path to a JSON file). Empty when
 /// unset.
@@ -2028,6 +2126,10 @@ struct DomFixture {
     selectors_by_id: HashMap<u64, String>,
     /// Viewport `[width, height]` in CSS pixels. Defaults to `[1024, 768]`.
     viewport: [u64; 2],
+    /// Selector → scripted `web.type` fill prepare verdict (see module docs).
+    inputs: HashMap<String, String>,
+    /// `Runtime.releaseObjectGroup` answers with a CDP error.
+    release_error: bool,
 }
 
 static FIXTURE: OnceLock<DomFixture> = OnceLock::new();
@@ -2066,6 +2168,17 @@ fn load_dom_fixture() -> DomFixture {
             }
         }
     }
+    if let Some(inputs) = v.get("inputs").and_then(|i| i.as_object()) {
+        for (sel, verdict) in inputs {
+            if let Some(verdict) = verdict.as_str() {
+                out.inputs.insert(sel.clone(), verdict.to_string());
+            }
+        }
+    }
+    out.release_error = v
+        .get("release_error")
+        .and_then(|r| r.as_bool())
+        .unwrap_or(false);
     if let Some(boxes_obj) = v.get("boxes").and_then(|b| b.as_object()) {
         // Stable id assignment: deterministic ordering by selector string.
         let mut keys: Vec<&String> = boxes_obj.keys().collect();

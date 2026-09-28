@@ -257,7 +257,11 @@ class Session:
         genuine (``isTrusted:true``) edit, the same mechanism as Playwright
         ``fill()``. It drives React/react-hook-form ``onChange`` AND is treated
         as user-entered, so trust-gating flows (e.g. Auth0 New Universal Login)
-        advance; ``text=""`` clears the field. ``mode="value"`` is the legacy
+        advance; ``text=""`` clears the field. Date/time-family inputs
+        (``date``, ``time``, ``datetime-local``, ``month``, ``week``, ``color``,
+        ``range``) are set by value in their own format (``2036-12-31`` for a
+        date); a value the input rejects fails with ``malformed_value``, and a
+        disabled/readonly target with ``not_editable``. ``mode="value"`` is the legacy
         path: ``.value`` via ``Runtime.evaluate`` + synthetic ``input``/``change``
         events (``isTrusted:false``) — a back-compat escape hatch.
         ``mode="keystrokes"`` dispatches a real per-character CDP
