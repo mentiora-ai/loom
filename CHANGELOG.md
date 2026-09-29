@@ -6,6 +6,17 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An invalid selector no longer kills the session's browser** — when Chromium rejected a
+  selector it cannot parse (`DOM Error while querying`, e.g. Playwright's `:text()`), the locator
+  resolver returned it as an error, `web.click` / `web.type` / `web.press_key` / `web.wait` recorded
+  it as a TRANSPORT failure, and that evicted the live shim. The browser was shut down, and every later
+  call in the session failed (`surface_trap`). Resolution now follows its documented contract: any
+  CDP application error while resolving (an unparseable selector, a node or execution context that
+  went away) is a typed `selector_not_found`, and the browser stays up. Only a transport failure
+  is an error.
+
 ## [0.15.6] — 2026-09-28 — role= names a control by the label wrapping it
 
 A patch release. `role=` locators now name a form control by a `<label>` that wraps it, as

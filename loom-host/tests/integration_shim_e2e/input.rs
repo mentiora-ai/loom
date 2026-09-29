@@ -208,6 +208,53 @@ fn fill_prepare_manager(
     (mgr, id, user_data_dir, log_path)
 }
 
+/// A selector Chromium cannot parse (Playwright's `:text()`, which a studio agent
+/// wrote on hollie staging) is a typed miss that leaves the session's browser
+/// alive. It used to surface as `shim_failure`, be recorded as a TRANSPORT
+/// failure, and evict the live shim, so every later call in the run hit a dead
+/// browser (demo-run-32ae7f20). The oracle is the shim's restart bookkeeping: no
+/// eviction means no respawn.
+#[tokio::test]
+#[ignore = "requires fake-chromium binary; run `cargo build -p loom-shims --features fake-chromium-bin --bin fake-chromium` first"]
+async fn an_invalid_selector_is_a_typed_miss_and_keeps_the_browser() {
+    use loom_host::shim_manager::InputDispatchOutcome as O;
+    let (mgr, id, _udd, _log) = fill_prepare_manager(
+        "invalid-selector",
+        r##"{"boxes":{"#ok":[10.0,20.0,110.0,60.0]}}"##,
+    );
+    let click = |sel: &'static str| {
+        let fut = mgr.send_trusted_click(id.clone(), 0, 0, sel.into(), 0);
+        async move {
+            tokio::time::timeout(Duration::from_secs(30), fut)
+                .await
+                .expect("click did not return in 30s")
+        }
+    };
+    // Spawn the shim with a first, healthy click.
+    assert_eq!(click("#ok").await.expect("first click"), O::Ok);
+
+    let bad = click("li:has(span:text('e2e-midnight-1')) button").await;
+    assert!(
+        matches!(bad, Ok(O::SelectorNotFound)),
+        "an unparseable selector must be a typed miss, not an error: {bad:?}"
+    );
+    // `shim_state` tracks a shim only once it failed or respawned, so "absent" is zero.
+    assert_eq!(
+        mgr.shim_state(&id).map_or(0, |s| s.consecutive_failures),
+        0,
+        "a page-side rejection is no shim failure"
+    );
+
+    // The same browser keeps working: no eviction, so no respawn.
+    assert_eq!(click("#ok").await.expect("click after the miss"), O::Ok);
+    assert_eq!(
+        mgr.shim_state(&id).map_or(0, |s| s.restart_count),
+        0,
+        "the invalid selector must not have evicted the live shim"
+    );
+    mgr.shutdown_session("invalid-selector").await;
+}
+
 /// The CDP log written after byte offset `from`, and the log's new length.
 fn cdp_log_since(log_path: &std::path::Path, from: usize) -> (String, usize) {
     let log = std::fs::read_to_string(log_path).unwrap_or_default();

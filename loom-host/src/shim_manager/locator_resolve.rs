@@ -2,7 +2,6 @@
 // domain, `text=` / `role=` through the marker resolver (`locator_js`), and the
 // deadline-bounded `web.wait` poll built on it.
 
-use super::cdp_roundtrip::cdp_app_error;
 use super::helpers::{cbor_get, cbor_u64};
 use super::locator_js::{marker_resolver_js, MARKER_ATTR, MARKER_SELECTOR};
 use super::shim_manager::ShimManager;
@@ -39,7 +38,7 @@ impl ShimManager {
         budget_ms: u64,
     ) -> Result<Option<u64>, LoomError> {
         use ciborium::value::{Integer, Value};
-        let qs = self
+        let Ok(qs) = self
             .cdp_send_one(
                 id,
                 session_id,
@@ -57,7 +56,9 @@ impl ShimManager {
                 budget_ms,
             )
             .await?
-            .map_err(|e| cdp_app_error(id, e))?;
+        else {
+            return Ok(None); // app error ⇒ no match (see resolve_locator_node)
+        };
         let node = cbor_get(&qs, "nodeId").and_then(cbor_u64).unwrap_or(0);
         Ok(if node == 0 { None } else { Some(node) })
     }
@@ -74,6 +75,14 @@ impl ShimManager {
     /// frame is out-of-process (no in-process `contentDocument`), or the leaf is a
     /// `text=`/`role=` form (resolved by the evaluate-tier resolver, not this DOM
     /// path). `Err` only on transport failure.
+    ///
+    /// A CDP *application* error while resolving is `Ok(None)` too: Chromium
+    /// rejecting a selector it cannot parse (`DOM Error while querying`, e.g.
+    /// Playwright's `:text()`), or a node / execution context that went away
+    /// mid-resolution. The page offers no match. It must never be an `Err`,
+    /// because every caller records an `Err` as a TRANSPORT failure, which evicts
+    /// the shim and kills the session's live browser: one invalid selector used to
+    /// end a whole studio run (hollie staging, demo-run-32ae7f20).
     pub(super) async fn resolve_locator_node(
         &self,
         id: &ShimId,
@@ -100,7 +109,7 @@ impl ShimManager {
                 .await;
         }
 
-        let doc = self
+        let Ok(doc) = self
             .cdp_send_one(
                 id,
                 session_id,
@@ -115,7 +124,9 @@ impl ShimManager {
                 budget_ms,
             )
             .await?
-            .map_err(|e| cdp_app_error(id, e))?;
+        else {
+            return Ok(None); // app error ⇒ no match (see resolve_locator_node)
+        };
         let mut root = cbor_get(&doc, "root")
             .and_then(|r| cbor_get(r, "nodeId"))
             .and_then(cbor_u64)
@@ -138,7 +149,7 @@ impl ShimManager {
                         Some(n) => n,
                         None => return Ok(None),
                     };
-                    let described = self
+                    let Ok(described) = self
                         .cdp_send_one(
                             id,
                             session_id,
@@ -160,7 +171,9 @@ impl ShimManager {
                             budget_ms,
                         )
                         .await?
-                        .map_err(|e| cdp_app_error(id, e))?;
+                    else {
+                        return Ok(None); // app error ⇒ no match (see resolve_locator_node)
+                    };
                     match cbor_get(&described, "node")
                         .and_then(|n| cbor_get(n, "contentDocument"))
                         .and_then(|cd| cbor_get(cd, "nodeId"))
@@ -215,10 +228,12 @@ impl ShimManager {
                 (Value::Text("returnByValue".into()), Value::Bool(true)),
             ]),
         };
-        let resp = self
+        let Ok(resp) = self
             .cdp_send_one(id, session_id, target_id, eval(js), budget_ms)
             .await?
-            .map_err(|e| cdp_app_error(id, e))?;
+        else {
+            return Ok(None); // app error ⇒ no match (see resolve_locator_node)
+        };
         let found = cbor_get(&resp, "result")
             .and_then(|r| cbor_get(r, "value"))
             .map(|v| matches!(v, Value::Bool(true)))
@@ -226,7 +241,7 @@ impl ShimManager {
         if !found {
             return Ok(None);
         }
-        let doc = self
+        let Ok(doc) = self
             .cdp_send_one(
                 id,
                 session_id,
@@ -241,7 +256,9 @@ impl ShimManager {
                 budget_ms,
             )
             .await?
-            .map_err(|e| cdp_app_error(id, e))?;
+        else {
+            return Ok(None); // app error ⇒ no match (see resolve_locator_node)
+        };
         let root = cbor_get(&doc, "root")
             .and_then(|r| cbor_get(r, "nodeId"))
             .and_then(cbor_u64)

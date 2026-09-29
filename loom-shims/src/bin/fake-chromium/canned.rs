@@ -142,6 +142,13 @@ pub(crate) fn canned_response(method: &str, params: &Value) -> Value {
                 .get("selector")
                 .and_then(|s| s.as_str())
                 .unwrap_or("");
+            // Real Chromium rejects a selector it cannot parse — e.g. Playwright's
+            // `:text()` pseudo-class — with a CDP application error, not an empty match.
+            if sel.contains(":text(") {
+                return json!({
+                    "__cdp_error__": { "code": -32000, "message": "DOM Error while querying" }
+                });
+            }
             let node_id = dom_fixture().ids_by_selector.get(sel).copied().unwrap_or(0);
             json!({ "nodeId": node_id })
         }
