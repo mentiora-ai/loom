@@ -62,6 +62,18 @@ if [[ "$LSESSION" =~ ^[a-z0-9]{26}$ ]]; then
     fail "scroll-by-css-prefixed-locator" "see $RESULTS/scroll-css.json"
   fi
 
+  # A selector Chromium cannot parse (Playwright's :text(), as a studio agent
+  # wrote on hollie staging) is a typed miss, and the session's browser survives.
+  # It used to be recorded as a transport failure that shut the browser down, so
+  # every later call in the session failed.
+  IS=$(click "$LSESSION" "li:has(span:text('Hover me')) button")
+  echo "$IS" >"$RESULTS/invalid-selector.json"
+  if echo "$IS" | grep -q 'selector_not_found' && [ "$(lval 'document.title')" = "Loom E2E Locators Fixture" ]; then
+    ok "invalid-selector-is-a-miss-and-the-session-survives"
+  else
+    fail "invalid-selector-is-a-miss-and-the-session-survives" "see $RESULTS/invalid-selector.json"
+  fi
+
   $LOOM session close "$LSESSION" >/dev/null 2>&1 || true
 else
   fail "locators-session-create" "could not create locators session"
