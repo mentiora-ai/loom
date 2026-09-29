@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.7] — 2026-09-29 — An invalid selector no longer kills the session's browser
+
+A patch release. A selector Chromium cannot parse (e.g. Playwright's `:text()`) used to be recorded
+as a transport failure that shut down the session's browser, so every later call in the session
+failed. It is now a typed `selector_not_found`, and the browser stays up. (#344)
+
 ### Fixed
 
 - **An invalid selector no longer kills the session's browser** — when Chromium rejected a
