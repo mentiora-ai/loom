@@ -6,6 +6,57 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.8] — 2026-10-29 — A slow screenshot no longer kills the session, and 44 advisories cleared
+
+A patch release, mostly maintenance that had piled up. A `web.screenshot` that ran past its recv
+timeout used to take the session's Chromium with it, so every later verb failed; a slow round-trip
+is now a typed timeout and the browser stays up (#353). `cargo-deny` went from 44 advisories to
+zero, including 16 in wasmtime and four in rustls (#352). And CI itself had been red on every job
+that compiled `loom-core` since the stable toolchain rolled, which is also why the weekly
+real-world e2e run had been failing (#351).
+
+### Fixed
+
+- **A slow round-trip is a typed timeout, not a dead browser** — a `web.screenshot` that hit its
+  recv timeout was recorded as a TRANSPORT failure, which evicts the live shim, so the session's
+  Chromium was shut down and every later verb returned `surface_trap`; respawned shims could not
+  reconnect. The host's own recv timeout is now an application outcome, as the shim's own
+  `CdpTimeout` ("slow page") already was: the frame reached a live shim and the page was slow, so
+  the browser stays up. It still counts toward the circuit breaker, so a genuinely wedged shim is
+  still bounded, and a send timeout (the frame never left the host), a closed channel, a dropped
+  oneshot and framing or demux violations remain transport failures. Real shim death is detected
+  independently by the child-exit watcher, so the recv timeout never had to stand in for it. The
+  `shim_timeout` wire code is unchanged. (#353)
+- **CI compiled again on current stable** — stable Rust deprecated
+  `Atomic::<u32>::fetch_update` in favour of `try_update`, and because the workspace builds with
+  `-D warnings` that deprecation was a hard error in `loom-core`. It had been failing the build,
+  test, clippy, gen-docs and vendored-wasm gates on every open PR, the weekly beta build, and the
+  scheduled real-world e2e run — whose per-site results were empty because no browser ever
+  started. `try_update` postdates the workspace MSRV of 1.92, so the decrement is written out as a
+  `compare_exchange_weak` loop, which keeps the saturating-at-zero behaviour and compiles clean
+  across the whole supported range. (#351)
+- **A zip entry can no longer escape the Chromium install directory** — `extract_zip` joined
+  archive entry names straight onto the destination, so an entry named `../…` would have written
+  outside it. The archive is SHA-verified before extraction, so this was defence in depth rather
+  than a live hole, but every entry is now confined to the destination. (#352)
+
+### Changed
+
+- **Dependency & security refresh: 44 `cargo-deny` advisories to zero** — wasmtime and
+  wasmtime-wasi 48.0.3 → 49.0.4 in lockstep (16 advisories, mostly GC heap corruption and host
+  panics reachable through the component model); zip 8 → 9 (SUID/SGID preservation and symlink
+  traversal in `extract`); rustls 0.23.45 → 0.23.46 (TLS secrets in `Debug` output, application
+  data sent to the outer server after ECH rejection, a 1 GiB pre-auth allocation in brotli
+  certificate decompression, and an unauthenticated ServerHello downgrading later connections);
+  rustls-webpki 0.103.16, tokio 1.54.1, ruzstd 0.9.1, ctutils 0.4.7, webpki-roots 1.0.11, and the
+  rest of the lockfile within semver. Also wit-bindgen 0.62 and jsonschema 0.57. Six advisories
+  are ignored with their reasons recorded in `deny.toml`: zstd and zstd-safe reach the tree only
+  through wasmtime's `cache` feature, which loom never enables, and the zbus stack's three
+  `unmaintained` notices have no published upgrade. No user-facing behaviour change. (#352)
+- **The vendored WASM guest was rebuilt for the current toolchain** — `loom_surface_web.wasm` no
+  longer byte-matched a rebuild from source. The guest sources have not changed since #197; the
+  bytes drifted with the toolchain and then with wit-bindgen 0.62. (#351, #352)
+
 ## [0.15.7] — 2026-09-29 — An invalid selector no longer kills the session's browser
 
 A patch release. A selector Chromium cannot parse (e.g. Playwright's `:text()`) used to be recorded

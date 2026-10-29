@@ -2240,7 +2240,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "loom-cli"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2279,7 +2279,7 @@ dependencies = [
 
 [[package]]
 name = "loom-core"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "async-trait",
  "dashmap",
@@ -2311,7 +2311,7 @@ dependencies = [
 
 [[package]]
 name = "loom-daemon"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2339,7 +2339,7 @@ dependencies = [
 
 [[package]]
 name = "loom-host"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "addr2line 0.27.1",
  "async-trait",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "loom-keychain"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "loom-mcp"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2416,7 +2416,7 @@ dependencies = [
 
 [[package]]
 name = "loom-rpc"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2444,7 +2444,7 @@ dependencies = [
 
 [[package]]
 name = "loom-shared"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "base64 0.23.1",
  "ciborium",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "loom-shims"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2488,7 +2488,7 @@ dependencies = [
 
 [[package]]
 name = "loom-surface-web"
-version = "0.15.7"
+version = "0.15.8"
 dependencies = [
  "sha2 0.10.9",
  "wit-bindgen 0.62.0",
