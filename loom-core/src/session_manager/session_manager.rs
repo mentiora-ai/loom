@@ -343,12 +343,22 @@ impl Session {
     /// Mark an action as finished: decrement the in-flight counter (saturating at 0) and
     /// reset the idle clock so the idle window starts from completion.
     pub fn action_finished(&self, now_ms: u64) {
-        // `fetch_update` floors at 0 so an unbalanced finish can't underflow.
-        let _ = self
-            .in_flight_actions
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                Some(n.saturating_sub(1))
-            });
+        // A compare-exchange loop floors the counter at 0 so an unbalanced finish
+        // can't underflow. Written out rather than via `fetch_update`, which newer
+        // toolchains deprecate in favour of `try_update` — a method that postdates
+        // our MSRV, so neither spelling compiles everywhere we support.
+        let mut current = self.in_flight_actions.load(Ordering::SeqCst);
+        while current > 0 {
+            match self.in_flight_actions.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
         self.touch(now_ms);
     }
 

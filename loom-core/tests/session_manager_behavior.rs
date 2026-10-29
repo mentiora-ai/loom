@@ -14,6 +14,7 @@
 //   - test_abort_appends_terminal_entry_to_manifest
 //   - test_abort_completes_within_1s_wall_clock
 //   - test_abort_all_aborts_every_active_session
+//   - in_flight_counter_is_balanced_under_concurrent_start_finish
 
 use loom_core::budget_enforcer::{BudgetEnforcer, LocalBudgetEnforcer};
 use loom_core::content_store::{ContentStore, LocalContentStore};
@@ -121,6 +122,61 @@ fn activity_methods_track_in_flight_and_last_activity() {
     // Unbalanced finish floors at 0 (never underflows).
     s.action_finished(base + 9_500);
     assert_eq!(s.in_flight(), 0);
+}
+
+#[test]
+fn in_flight_counter_is_balanced_under_concurrent_start_finish() {
+    // `action_finished` decrements through a hand-rolled compare-exchange loop so it
+    // can floor at 0. Prove that loop keeps the counter exact under contention: it
+    // must not lose a decrement to a racing thread, nor underflow on the extra
+    // finishes that outnumber the starts.
+    let (sm, _tmp) = make_sm();
+    let id = sm.create(default_opts()).unwrap();
+    let s = sm.get(id).unwrap();
+    let base = s.last_activity();
+
+    const THREADS: usize = 8;
+    const PER_THREAD: usize = 500;
+
+    // Each thread balances its own starts and finishes, so the net effect is zero.
+    let mut handles = Vec::with_capacity(THREADS);
+    for _ in 0..THREADS {
+        let s = Arc::clone(&s);
+        handles.push(std::thread::spawn(move || {
+            for _ in 0..PER_THREAD {
+                s.action_started(base);
+                s.action_finished(base);
+            }
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(
+        s.in_flight(),
+        0,
+        "balanced concurrent start/finish must settle back to 0"
+    );
+
+    // Now race unbalanced finishes against the floor: every thread over-finishes.
+    s.action_started(base);
+    let mut handles = Vec::with_capacity(THREADS);
+    for _ in 0..THREADS {
+        let s = Arc::clone(&s);
+        handles.push(std::thread::spawn(move || {
+            for _ in 0..PER_THREAD {
+                s.action_finished(base);
+            }
+        }));
+    }
+    for h in handles {
+        h.join().unwrap();
+    }
+    assert_eq!(
+        s.in_flight(),
+        0,
+        "concurrent over-finish must saturate at 0, never wrap"
+    );
 }
 
 #[test]
