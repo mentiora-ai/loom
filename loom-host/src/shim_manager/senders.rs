@@ -10,7 +10,7 @@
 // dedicated params struct (see `super::types`); the generic `send` and the
 // lifecycle / breaker methods stay in `shim_manager.rs`.
 
-use super::helpers::{map_shim_code, parse_evaluate_payload, shim_error_class};
+use super::helpers::{host_call_class, map_shim_code, parse_evaluate_payload, shim_error_class};
 use super::process::send_and_await;
 use super::shim_manager::ShimManager;
 use super::types::{
@@ -133,7 +133,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -201,7 +201,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -326,7 +326,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -464,7 +464,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -578,7 +578,7 @@ impl ShimManager {
                 return Ok(SetInputFilesOutcome::SelectorNotFound);
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 return Err(e);
             }
         };
@@ -617,7 +617,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }

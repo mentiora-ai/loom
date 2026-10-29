@@ -7,7 +7,7 @@
 // sibling submodules can call them unchanged.
 
 use super::types::{EvaluateException, EvaluateOutcome, FailureClass};
-use loom_core::error::LoomErrorCode;
+use loom_core::error::{LoomError, LoomErrorCode};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -84,6 +84,40 @@ pub(crate) fn shim_error_class(code: &loom_shared::shim_protocol::ShimErrorCode)
         E::CdpTimeout | E::CdpProtocolError | E::TargetUnknown | E::ShimInternalError => {
             FailureClass::Application
         }
+    }
+}
+
+/// Classify a HOST-side round-trip error (the `Err` arm of `send_and_await` and
+/// the helpers built on it) for `record_failure`.
+///
+/// The counterpart to [`shim_error_class`], which classifies errors the shim
+/// REPORTED. Both answer the same question: did this failure come from a live,
+/// responsive shim? If it did, the browser must stay up.
+///
+/// A **recv** timeout is `Application`: the frame reached the shim, which is
+/// alive and working — the PAGE was slow. Note `shim_error_class` already treats
+/// the shim's own `CdpTimeout` ("slow page") as `Application`; a host-side recv
+/// timeout on that very same slow page is the same condition observed by a
+/// different clock, so it must land in the same class. Classing it `Transport`
+/// evicted the subprocess and killed the session's healthy Chromium, losing the
+/// whole session over one slow screenshot (#347).
+///
+/// Everything else stays `Transport`: a send timeout (the frame never left the
+/// host), a closed channel, a dropped oneshot, a crashed subprocess, framing and
+/// demux violations. Those mean the subprocess or its socket is genuinely
+/// unhealthy and the next admitted call must respawn.
+pub(crate) fn host_call_class(err: &LoomError) -> FailureClass {
+    let is_recv_timeout = err.code == LoomErrorCode::ShimTimeout
+        && err
+            .context
+            .as_ref()
+            .and_then(|c| c.get(super::process::TIMEOUT_PHASE_KEY))
+            .and_then(|v| v.as_str())
+            == Some(super::process::TIMEOUT_PHASE_RECV);
+    if is_recv_timeout {
+        FailureClass::Application
+    } else {
+        FailureClass::Transport
     }
 }
 

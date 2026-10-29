@@ -119,6 +119,23 @@ async fn send_and_await_recv_timeout_removes_pending_entry() {
         err.message
     );
 
+    // #347: a real recv timeout must carry the `timeout_phase: "recv"` context
+    // tag. The host classifies on that tag to keep a slow round-trip from
+    // evicting the subprocess and killing the session's healthy Chromium. The
+    // classifier itself is unit-tested in `shim_manager::interface_tests`; this
+    // pins the other half — that the production error actually arrives tagged.
+    // Were the tag dropped or renamed, the classifier would silently fall back
+    // to the transport class and the lost-session bug would be back.
+    assert_eq!(
+        err.context
+            .as_ref()
+            .and_then(|c| c.get("timeout_phase"))
+            .and_then(|v| v.as_str()),
+        Some("recv"),
+        "a recv timeout must be tagged as such; got context {:?}",
+        err.context
+    );
+
     // The load-bearing assertion: cleanup ran.
     assert!(
         process.pending.is_empty(),

@@ -3,6 +3,7 @@
 // eviction, read-loop transport-death detection, spawn mutual
 // exclusion, and per-shim error code mapping.
 
+use super::helpers::host_call_class;
 use super::process::{host_read_loop, ShimProcess, ShimTasks};
 use super::shim_manager::{
     effective_generic_recv_ms, BreakerState, FailureClass, ShimConfig, ShimId, ShimManager,
@@ -257,6 +258,98 @@ async fn application_failure_counts_toward_breaker_but_does_not_evict() {
     assert!(
         !mgr.processes.contains_key(&id),
         "transport failure must evict the process entry"
+    );
+}
+
+// === Host-side round-trip failure classification (#347) ===
+
+/// Build the `LoomError` `send_and_await` returns when the shim's answer does
+/// not arrive in time, tagged exactly as the production path tags it.
+fn recv_timeout_err() -> LoomError {
+    LoomError::new(
+        LoomErrorCode::ShimTimeout,
+        "shim recv timeout after 30000 ms",
+    )
+    .with_context(serde_json::json!({
+        super::process::TIMEOUT_PHASE_KEY: super::process::TIMEOUT_PHASE_RECV
+    }))
+}
+
+/// And the one `register_and_send` returns when the frame never left the host.
+fn send_timeout_err() -> LoomError {
+    LoomError::new(
+        LoomErrorCode::ShimTimeout,
+        "shim send timeout after 1000 ms",
+    )
+    .with_context(serde_json::json!({
+        super::process::TIMEOUT_PHASE_KEY: super::process::TIMEOUT_PHASE_SEND
+    }))
+}
+
+#[test]
+fn recv_timeout_is_application_class_but_send_timeout_is_transport() {
+    // The frame reached a live shim and the PAGE was slow: the subprocess is
+    // healthy, so this must not evict it. Same condition the shim reports as
+    // `CdpTimeout`, which `shim_error_class` already calls Application.
+    assert_eq!(
+        host_call_class(&recv_timeout_err()),
+        FailureClass::Application,
+        "a recv timeout came from a live shim — it must not evict a healthy Chromium"
+    );
+
+    // The frame never left the host: the channel is wedged or the subprocess is
+    // gone. Still a transport failure.
+    assert_eq!(
+        host_call_class(&send_timeout_err()),
+        FailureClass::Transport,
+        "a send timeout means the frame never reached the shim"
+    );
+
+    // Everything else keeps the original classification.
+    for err in [
+        LoomError::new(LoomErrorCode::ShimFailure, "shim crashed: exit 256"),
+        LoomError::new(LoomErrorCode::ShimFailure, "shim request channel closed"),
+        LoomError::new(
+            LoomErrorCode::ShimFailure,
+            "shim response oneshot dropped (subprocess gone)",
+        ),
+        // An untagged ShimTimeout (e.g. from a direct constructor) is treated
+        // conservatively as transport — only the explicit recv tag downgrades.
+        LoomError::new(LoomErrorCode::ShimTimeout, "shim timeout"),
+    ] {
+        assert_eq!(
+            host_call_class(&err),
+            FailureClass::Transport,
+            "unexpected class for {err:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn recv_timeout_does_not_evict_the_live_process() {
+    // The #347 regression, end to end through `record_failure`: a `web.screenshot`
+    // that runs past its recv timeout used to be classed Transport, which evicted
+    // the subprocess and killed the session's Chromium — every later verb then
+    // failed with surface_trap and respawned shims could not reconnect.
+    let (mgr, id) = fixture();
+    let (process, _request_rx) = fake_process();
+    mgr.processes.insert(id.clone(), process);
+
+    mgr.record_failure(&id, host_call_class(&recv_timeout_err()));
+
+    assert!(
+        mgr.processes.contains_key(&id),
+        "a slow screenshot must leave the session's browser up"
+    );
+    // It still counts toward the breaker, so a genuinely wedged shim is bounded.
+    let state = mgr.shim_state(&id).expect("state entry");
+    assert_eq!(state.consecutive_failures, 1);
+
+    // A send timeout on the same shim still evicts.
+    mgr.record_failure(&id, host_call_class(&send_timeout_err()));
+    assert!(
+        !mgr.processes.contains_key(&id),
+        "a send timeout must still evict the process entry"
     );
 }
 

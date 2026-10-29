@@ -1,7 +1,7 @@
 // ShimManager — screencast recording and the voice-call audio senders (capture,
 // inject). Split out of `senders.rs` (behaviour-preserving).
 
-use super::helpers::{map_shim_code, shim_error_class};
+use super::helpers::{host_call_class, map_shim_code, shim_error_class};
 use super::process::send_and_await;
 use super::shim_manager::ShimManager;
 use super::types::{FailureClass, ShimId};
@@ -67,7 +67,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -139,7 +139,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -198,7 +198,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -270,7 +270,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
@@ -354,7 +354,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
