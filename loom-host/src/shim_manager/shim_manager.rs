@@ -206,7 +206,7 @@ impl ShimManager {
                 ))
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }

@@ -7,7 +7,7 @@ use super::fill_prepare::{
     fill_prepare_message, parse_fill_prepare, release_fill_objects_message, resolve_node_message,
     FillPrep,
 };
-use super::helpers::cbor_get;
+use super::helpers::{cbor_get, host_call_class};
 use super::input_dispatch::insert_text_event;
 use super::shim_manager::ShimManager;
 use super::trusted_input::InputAck;
@@ -83,7 +83,7 @@ impl ShimManager {
         let Some(node_id) = self
             .resolve_and_focus(&id, session_id, target_id, &selector, budget_ms)
             .await
-            .inspect_err(|_| self.record_failure(&id, FailureClass::Transport))?
+            .inspect_err(|e| self.record_failure(&id, host_call_class(e)))?
         else {
             self.record_success(&id);
             return Ok(InputDispatchOutcome::SelectorNotFound);

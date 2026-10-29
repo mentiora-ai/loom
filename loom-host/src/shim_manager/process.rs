@@ -474,6 +474,25 @@ fn mark_transport_dead(
     pending.clear();
 }
 
+/// `LoomError::context` key carrying which PHASE of a shim round-trip timed out,
+/// and its two values. Both phases surface the same `shim_timeout` wire code, but
+/// they are not the same failure:
+///
+/// - [`TIMEOUT_PHASE_SEND`] — the frame never left the host. The request channel
+///   is wedged or the subprocess is gone: a transport failure.
+/// - [`TIMEOUT_PHASE_RECV`] — the frame reached the shim and its answer did not
+///   come back in time. That is a LIVE, responsive shim working on a slow page,
+///   so it must NOT evict the subprocess and kill a healthy Chromium.
+///
+/// Carried as structured context rather than sniffed out of the message text, and
+/// read back by `helpers::host_call_class`. Genuine shim death is detected
+/// independently (the child-exit watcher and `mark_transport_dead` both set
+/// `crashed`, which `register_and_send` fail-fasts on and `get_or_spawn` evicts),
+/// so a recv timeout never has to stand in as a death signal.
+pub(crate) const TIMEOUT_PHASE_KEY: &str = "timeout_phase";
+pub(crate) const TIMEOUT_PHASE_SEND: &str = "send";
+pub(crate) const TIMEOUT_PHASE_RECV: &str = "recv";
+
 /// Register a pending-response slot and write `req` to the shim, returning the
 /// `request_id` (for pending-cleanup on a later recv timeout) and the receiver
 /// to await. An `Err` means the frame NEVER left the host (shim already
@@ -522,7 +541,8 @@ async fn register_and_send(
             Err(LoomError::new(
                 LoomErrorCode::ShimTimeout,
                 format!("shim send timeout after {} ms", send_timeout.as_millis()),
-            ))
+            )
+            .with_context(serde_json::json!({ TIMEOUT_PHASE_KEY: TIMEOUT_PHASE_SEND })))
         }
     }
 }
@@ -547,7 +567,8 @@ pub async fn send_and_await(
             Err(LoomError::new(
                 LoomErrorCode::ShimTimeout,
                 format!("shim recv timeout after {} ms", recv_timeout.as_millis()),
-            ))
+            )
+            .with_context(serde_json::json!({ TIMEOUT_PHASE_KEY: TIMEOUT_PHASE_RECV })))
         }
     }
 }

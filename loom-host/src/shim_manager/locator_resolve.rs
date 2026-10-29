@@ -2,7 +2,7 @@
 // domain, `text=` / `role=` through the marker resolver (`locator_js`), and the
 // deadline-bounded `web.wait` poll built on it.
 
-use super::helpers::{cbor_get, cbor_u64};
+use super::helpers::{cbor_get, cbor_u64, host_call_class};
 use super::locator_js::{marker_resolver_js, MARKER_ATTR, MARKER_SELECTOR};
 use super::shim_manager::ShimManager;
 use super::types::{FailureClass, ShimId, WaitResolveOutcome};
@@ -334,7 +334,7 @@ impl ShimManager {
                 Ok(WaitResolveOutcome::PredicateFalse)
             }
             Err(e) => {
-                self.record_failure(&id, FailureClass::Transport);
+                self.record_failure(&id, host_call_class(&e));
                 Err(e)
             }
         }
