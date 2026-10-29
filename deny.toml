@@ -16,7 +16,30 @@ no-default-features = false
 version = 2
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = []
+# Each entry states WHY the advisory does not apply to loom and what would
+# retire the entry. Anything that is merely inconvenient to upgrade does NOT
+# belong here — it gets upgraded.
+ignore = [
+    # zstd / zstd-safe reach the tree ONLY through wasmtime's `cache` feature
+    # (wasmtime -> wasmtime-internal-cache -> zstd), which compiles the module
+    # cache in but does not turn it on: `Config`'s cache field defaults to
+    # `None` and only `Config::cache(Some(..))` enables it. loom never calls it
+    # (nor `cache_config_load*`), so no zstd decompression path is reachable.
+    # All three advisories are in that decompression code.
+    # Retire when wasmtime's cache depends on zstd >= 0.14.3 / zstd-safe >= 8.2.0.
+    "RUSTSEC-2026-0391", # zstd: abandoned-stream data leaks into the next stream
+    "RUSTSEC-2026-0398", # zstd-safe: Seekable::decompress sets len beyond capacity
+    "RUSTSEC-2026-0403", # zstd-safe: uninit memory on failed legacy-frame stream
+    # `unmaintained` (not vulnerabilities) in the zbus stack behind the LINUX
+    # keychain backend: zbus -> zbus_macros -> {zvariant, zbus_names}, via
+    # loom-keychain. No safe upgrade is published, so there is nothing to bump;
+    # these are advisories about maintenance status, not a known defect.
+    # Retire when the zbus stack is maintained again or loom-keychain's Linux
+    # backend moves off zbus.
+    "RUSTSEC-2026-0370", # zvariant unmaintained
+    "RUSTSEC-2026-0371", # zbus_names unmaintained
+    "RUSTSEC-2026-0372", # zvariant_derive unmaintained
+]
 
 [licenses]
 version = 2
@@ -116,9 +139,11 @@ wrappers = [
     "ring",            # crypto / vault
     "tempfile",        # temp file naming
     "jsonschema",      # schema validation engine RNG
+    "jsonschema-value", # jsonschema 0.57+ value layer (host-side only)
     "referencing",     # jsonschema URI resolution helpers
     "jobserver",       # build-time make-jobserver client
     "secret-service",  # Linux keychain backend (v0.9.4) — uses getrandom for session-AES IV
+    "zip",             # zip 9 reaches getrandom directly (new in 9.x); host-side only
 ]
 
 # 3. Forbid platform-specific keychain crates outside loom-keychain.

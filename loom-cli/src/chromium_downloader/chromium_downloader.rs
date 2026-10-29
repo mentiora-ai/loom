@@ -473,7 +473,30 @@ fn extract_zip(archive: &Path, dest_dir: &Path) -> Result<(), CliError> {
         let mut entry = zip
             .by_index(i)
             .map_err(|e| CliError::Internal(format!("zip entry {i}: {e}")))?;
-        let entry_path = dest_dir.join(entry.name());
+        // zip 9 made `name()` fallible: an entry name need not be valid UTF-8.
+        let name = entry
+            .name()
+            .map_err(|e| CliError::Internal(format!("zip entry {i} name: {e}")))?
+            .into_owned();
+
+        // Confine every entry to `dest_dir`. A zip entry may name `..` or an
+        // absolute path and so write outside the destination — the hazard behind
+        // zip's own `extract()` advisories (RUSTSEC-2026-0367/0368/0369). This
+        // function does its own extraction, so the guard has to be ours. The
+        // archive is SHA-verified before we get here, so this is defence in
+        // depth rather than a live hole, but the check is free.
+        let relative = std::path::Path::new(&name);
+        if relative.components().any(|c| {
+            !matches!(
+                c,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        }) {
+            return Err(CliError::Internal(format!(
+                "refusing zip entry {i} with a non-relative path: {name}"
+            )));
+        }
+        let entry_path = dest_dir.join(relative);
 
         if entry.is_dir() {
             std::fs::create_dir_all(&entry_path).map_err(|e| {
