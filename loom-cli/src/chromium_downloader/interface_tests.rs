@@ -113,6 +113,50 @@ async fn ensure_skips_when_sentinel_matches() {
 /// Build a minimal valid zip served via file:// URL. After ensure(), the
 /// extracted file must be present and the sentinel must contain the archive SHA.
 #[tokio::test]
+async fn ensure_refuses_a_zip_entry_that_escapes_the_install_dir() {
+    use tempfile::TempDir;
+
+    // An archive entry named `../` writes outside the destination unless the
+    // extractor confines it. `extract_zip` does its own extraction rather than
+    // calling zip's `extract()`, so the confinement is ours to enforce (the
+    // hazard behind RUSTSEC-2026-0367/0368/0369).
+    let zip_dir = TempDir::new().unwrap();
+    let zip_path = zip_dir.path().join("evil.zip");
+    {
+        use std::io::Write as _;
+        let zip_file = std::fs::File::create(&zip_path).unwrap();
+        let mut zw = zip::ZipWriter::new(zip_file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        // `start_file_from_path` normalises `..` away, so the raw string API is
+        // what carries the traversal name a hostile archive would hold.
+        zw.start_file("../escaped.txt", opts).unwrap();
+        zw.write_all(b"should never be written").unwrap();
+        zw.finish().unwrap();
+    }
+
+    let archive_sha = sha256_of_file(&zip_path).await.unwrap();
+    let install_root = TempDir::new().unwrap();
+    let install_dir = install_root.path().join("chromium");
+    let downloader = ChromiumDownloader::new(ChromiumDownloaderConfig {
+        install_dir: install_dir.clone(),
+        binary_subpath: "Chromium".into(),
+    });
+
+    let file_url = format!("file://{}", zip_path.display());
+    let result = downloader.ensure(&file_url, &archive_sha).await;
+
+    assert!(
+        result.is_err(),
+        "an entry escaping the install dir must be refused, got: {result:?}"
+    );
+    assert!(
+        !install_root.path().join("escaped.txt").exists(),
+        "the traversal entry must not have been written outside the install dir"
+    );
+}
+
+#[tokio::test]
 async fn ensure_extracts_zip_and_writes_sentinel() {
     use tempfile::TempDir;
 

@@ -63,8 +63,15 @@ impl PlaywrightImporter {
                 let entry = archive.by_index(i).map_err(|e| {
                     LoomError::new(LoomErrorCode::Io, format!("zip read error: {e}"))
                 })?;
-                if entry.name().ends_with("trace.trace") {
-                    found = Some(entry.name().to_string());
+                // zip 9 made `name()` fallible (an entry name need not be valid
+                // UTF-8). An entry we cannot name is not the one we are looking
+                // for, so skip it rather than failing the whole import over an
+                // unrelated oddly-named attachment.
+                let Ok(name) = entry.name() else {
+                    continue;
+                };
+                if name.ends_with("trace.trace") {
+                    found = Some(name.into_owned());
                     break;
                 }
             }
