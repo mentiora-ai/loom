@@ -2474,7 +2474,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -2490,7 +2490,7 @@ dependencies = [
 name = "loom-surface-web"
 version = "0.15.8"
 dependencies = [
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "wit-bindgen 0.62.0",
 ]
 
