@@ -90,7 +90,7 @@ flate2 = "1"
 # (`bzip2-1.0.6`) is not on the deny.toml allow-list; disabling
 # defaults keeps the workspace license-clean.
 zip = { version = "9", default-features = false, features = ["deflate"] }
-dirs = "6"
+dirs = "7"
 bytes = "1"
 futures = "0.3"
 humantime = "2"
