@@ -20,7 +20,7 @@ wit-bindgen = { workspace = true }
 # wasm32-wasip2; only the Sha256 Digest API is needed by the guest.
 # Pinned via version (not workspace = true) because the workspace
 # declaration uses default features for host crates.
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 
 [lints]
 workspace = true

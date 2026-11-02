@@ -19,7 +19,7 @@ tokio-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ciborium = { workspace = true }
-sha2 = "0.10"
+sha2 = "0.11"
 base64 = { workspace = true }
 # video-capture: JPEG screencast frames → .webm. ffmpeg-sidecar downloads a
 # per-platform ffmpeg at RUNTIME (cached, ~100MB) — so this adds NO C/ffmpeg
