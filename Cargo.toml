@@ -65,7 +65,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # General
 async-trait = "0.1"
 dashmap = "6"
-parking_lot = "0.12"
+parking_lot = "0.13"
 thiserror = "2"
 anyhow = "1"
 filetime = "0.2"
